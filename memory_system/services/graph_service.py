@@ -1,18 +1,19 @@
 import subprocess
 import os
+from memory_system.models.schemas import GraphContext
 
-def get_graph_context(query: str):
+def get_graph_context(query: str) -> GraphContext:
     """
     Use graphify CLI to get context from the knowledge graph.
     """
     graphify_out = "graphify-out/graph.json"
 
     if not os.path.exists(graphify_out):
-        return {
-            "query": query,
-            "context": "Knowledge graph not found. Run 'graphify update .' first.",
-            "status": "missing_graph"
-        }
+        return GraphContext(
+            query=query,
+            context="Knowledge graph not found. Run 'graphify update .' first.",
+            status="missing_graph"
+        )
 
     try:
         # Try to use 'graphify query' for BFS traversal
@@ -26,24 +27,24 @@ def get_graph_context(query: str):
         )
 
         if result.returncode == 0:
-            return {
-                "query": query,
-                "context": result.stdout.strip(),
-                "status": "success"
-            }
+            return GraphContext(
+                query=query,
+                context=result.stdout.strip(),
+                status="success"
+            )
         else:
-            return {
-                "query": query,
-                "context": f"Error running graphify: {result.stderr}",
-                "status": "error"
-            }
+            return GraphContext(
+                query=query,
+                context=f"Error running graphify: {result.stderr}",
+                status="error"
+            )
 
     except Exception as e:
-        return {
-            "query": query,
-            "context": str(e),
-            "status": "exception"
-        }
+        return GraphContext(
+            query=query,
+            context=str(e),
+            status="exception"
+        )
 
 def get_graph_report():
     """Read the GRAPH_REPORT.md file."""

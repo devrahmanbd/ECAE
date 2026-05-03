@@ -4,7 +4,7 @@ def test_graph_context():
     query = "test context query"
     result = get_graph_context(query)
 
-    assert "query" in result
-    assert result["query"] == query
-    assert "status" in result
-    assert result["status"] in ["success", "missing_graph", "error", "exception"]
+    assert hasattr(result, "query")
+    assert result.query == query
+    assert hasattr(result, "status")
+    assert result.status in ["success", "missing_graph", "error", "exception"]

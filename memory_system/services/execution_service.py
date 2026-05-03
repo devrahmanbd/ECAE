@@ -1,7 +1,8 @@
 import subprocess
 import os
+from memory_system.models.schemas import ExecutionResult
 
-def execute_command(command: str, workdir: str = "."):
+def execute_command(command: str, workdir: str = ".", timeout: int = 60) -> ExecutionResult:
     """
     Execute a command in a subprocess.
     In a real production system, this would trigger a Docker container.
@@ -10,7 +11,7 @@ def execute_command(command: str, workdir: str = "."):
     try:
         # Simple security check: prevent cd
         if "cd " in command:
-            return {"success": False, "error": "cd command is forbidden. Use workdir parameter instead."}
+            return ExecutionResult(success=False, stdout="", stderr="", error="cd command is forbidden. Use workdir parameter instead.")
 
         result = subprocess.run(
             command,
@@ -18,22 +19,22 @@ def execute_command(command: str, workdir: str = "."):
             capture_output=True,
             text=True,
             cwd=workdir,
-            timeout=60
+            timeout=timeout
         )
 
-        return {
-            "success": result.returncode == 0,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "exit_code": result.returncode
-        }
+        return ExecutionResult(
+            success=result.returncode == 0,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            exit_code=result.returncode
+        )
 
     except subprocess.TimeoutExpired:
-        return {"success": False, "error": "Command timed out after 60 seconds."}
+        return ExecutionResult(success=False, stdout="", stderr="", error=f"Command timed out after {timeout} seconds.")
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return ExecutionResult(success=False, stdout="", stderr="", error=str(e))
 
-def run_in_docker(image: str, command: str, volumes: dict = None):
+def run_in_docker(image: str, command: str, volumes: dict = None) -> ExecutionResult:
     """
     Run a command inside a Docker container.
     volumes: dict mapping host path to container path.
