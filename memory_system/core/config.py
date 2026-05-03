@@ -1,0 +1,4 @@
+COLLECTION_NAME = "memory"
+VECTOR_SIZE = 384
+QDRANT_HOST = "localhost"
+QDRANT_PORT = 6333
