@@ -1,4 +1,5 @@
 import uuid
+from qdrant_client.http.models import PointStruct
 from memory_system.db.qdrant_client import client
 from memory_system.core.config import COLLECTION_NAME
 from memory_system.core.embeddings import embed
@@ -14,11 +15,11 @@ def store_memory(text: str, metadata: dict = None):
 
     client.upsert(
         collection_name=COLLECTION_NAME,
-        points=[{
-            "id": str(uuid.uuid4()),
-            "vector": vector,
-            "payload": payload
-        }]
+        points=[PointStruct(
+            id=str(uuid.uuid4()),
+            vector=vector,
+            payload=payload
+        )]
     )
 
     return {"status": "stored", "text": text}

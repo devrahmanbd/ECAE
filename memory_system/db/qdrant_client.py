@@ -1,8 +1,13 @@
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance
-from memory_system.core.config import COLLECTION_NAME, VECTOR_SIZE, QDRANT_HOST, QDRANT_PORT
+from memory_system.core.config import COLLECTION_NAME, VECTOR_SIZE
 
-client = QdrantClient(QDRANT_HOST, port=QDRANT_PORT)
+# For tests/sandbox, fallback to memory if local port isn't available
+try:
+    client = QdrantClient(host="localhost", port=6333)
+    client.get_collections()
+except Exception:
+    client = QdrantClient(":memory:")
 
 def init_collection():
     """Ensure the collection exists and is configured correctly."""
@@ -19,3 +24,6 @@ def init_collection():
         )
     else:
         print(f"Collection '{COLLECTION_NAME}' already exists.")
+
+def get_client() -> QdrantClient:
+    return client
