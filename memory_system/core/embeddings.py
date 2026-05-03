@@ -1,8 +1,9 @@
 from sentence_transformers import SentenceTransformer
 
-# Load model once at module level
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
-def embed(text: str):
-    """Generate a vector embedding for the given text."""
+def get_embedding(text: str) -> list[float]:
     return model.encode(text).tolist()
+
+def embed(text: str) -> list[float]:
+    return get_embedding(text)

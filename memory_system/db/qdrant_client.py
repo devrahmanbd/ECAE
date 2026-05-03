@@ -1,21 +1,31 @@
 from qdrant_client import QdrantClient
-from qdrant_client.models import VectorParams, Distance
-from memory_system.core.config import COLLECTION_NAME, VECTOR_SIZE, QDRANT_HOST, QDRANT_PORT
+from qdrant_client.http.models import Distance, VectorParams
 
-client = QdrantClient(QDRANT_HOST, port=QDRANT_PORT)
+client = QdrantClient(host="localhost", port=6333)
 
-def init_collection():
-    """Ensure the collection exists and is configured correctly."""
+COLLECTION_NAME = "memory"
+
+def init_qdrant():
     collections = client.get_collections().collections
     exists = any(c.name == COLLECTION_NAME for c in collections)
     
     if not exists:
         client.create_collection(
             collection_name=COLLECTION_NAME,
-            vectors_config=VectorParams(
-                size=VECTOR_SIZE,
-                distance=Distance.COSINE
-            )
+            vectors_config=VectorParams(size=384, distance=Distance.COSINE),
         )
-    else:
-        print(f"Collection '{COLLECTION_NAME}' already exists.")
+
+def init_collection():
+    try:
+        init_qdrant()
+    except Exception as e:
+        print(f"Failed to initialize Qdrant collection: {e}")
+
+# Initialize on import
+try:
+    init_qdrant()
+except Exception as e:
+    print(f"Failed to initialize Qdrant (might not be running): {e}")
+
+def get_client() -> QdrantClient:
+    return client

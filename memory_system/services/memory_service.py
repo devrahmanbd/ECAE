@@ -1,38 +1,47 @@
 import uuid
-from memory_system.db.qdrant_client import client
-from memory_system.core.config import COLLECTION_NAME
-from memory_system.core.embeddings import embed
+from typing import Dict, Any, List, Optional
+from memory_system.db.qdrant_client import get_client, COLLECTION_NAME
+from memory_system.core.embeddings import get_embedding
+from qdrant_client.http.models import PointStruct
 
-def store_memory(text: str, metadata: dict = None):
-    """Embed text and store in Qdrant."""
-    vector = embed(text)
+def store_memory(text: str, metadata: Optional[Dict[str, Any]] = None) -> str:
+    client = get_client()
+    embedding = get_embedding(text)
 
-    payload = {
-        "text": text,
-        "metadata": metadata or {}
-    }
+    point_id = str(uuid.uuid4())
+    payload = {"text": text}
+    if metadata:
+        payload["metadata"] = metadata
 
     client.upsert(
         collection_name=COLLECTION_NAME,
-        points=[{
-            "id": str(uuid.uuid4()),
-            "vector": vector,
-            "payload": payload
-        }]
+        points=[
+            PointStruct(
+                id=point_id,
+                vector=embedding,
+                payload=payload
+            )
+        ]
     )
+    return point_id
 
-    return {"status": "stored", "text": text}
+def search_memory(query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    client = get_client()
+    embedding = get_embedding(query)
 
-def search_memory(query: str, limit: int = 5):
-    """Search for similar memories."""
-    vector = embed(query)
-
-    results = client.query_points(
+    search_result = client.query_points(
         collection_name=COLLECTION_NAME,
-        query=vector,
+        query=embedding,
         limit=limit
     )
 
-    return [
-        r.payload for r in results.points
-    ]
+    results = []
+    for hit in search_result.points:
+        results.append({
+            "id": str(hit.id),
+            "score": hit.score,
+            "text": hit.payload.get("text", ""),
+            "metadata": hit.payload.get("metadata", None)
+        })
+
+    return results
