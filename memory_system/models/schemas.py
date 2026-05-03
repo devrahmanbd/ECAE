@@ -1,8 +1,9 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, List, Any
 
-# Phase 2: Metadata Structure
+# Phase 2 & 3: Metadata Structure
 class MemoryMetadata(BaseModel):
+    memory_type: Optional[str] = None # episodic, semantic, causal
     decision: Optional[str] = None
     reasoning: Optional[str] = None
     outcome: Optional[str] = None
