@@ -12,11 +12,9 @@ def test_identical_task_comparison():
     original_exec = exec_svc.execute_command
 
     def mock_execute(command: str, workdir: str = ".", timeout: int = 60):
-        cmd = command
         from memory_system.models.schemas import ExecutionResult
-        # Make the ECAE candidate pass
-        if "echo 'deprecating old logic'" in cmd or "echo 'fixing" in cmd:
-            return ExecutionResult(success=True, stdout="mocked pass", stderr="", exit_code=0)
+        # Simply intercept all commands and pretend they pass to avoid recursive pytest execution
+        # which freezes the test suite when run_demo executes pytest inside the mock workspace sandbox.
         return ExecutionResult(success=True, stdout="mocked pass", stderr="", exit_code=0)
 
     exec_svc.execute_command = mock_execute
@@ -24,7 +22,7 @@ def test_identical_task_comparison():
         # Complex task to trigger Graph Context risk
         result = compare_agents("Fix the complex API bug")
 
-        # Baseline fails on complex task
+        # Baseline fails on complex task based on heuristic in compare_agents
         assert result["baseline"]["success"] is False
         assert result["baseline"]["repeated_mistakes"] > 0
 
@@ -42,8 +40,8 @@ def test_reproducibility():
     original_exec = exec_svc.execute_command
 
     def mock_execute(command: str, workdir: str = ".", timeout: int = 60):
-        cmd = command
         from memory_system.models.schemas import ExecutionResult
+        # Complete mock to avoid running real tests or python scripts inside the benchmark sandbox
         return ExecutionResult(success=True, stdout="mocked pass", stderr="", exit_code=0)
 
     exec_svc.execute_command = mock_execute
