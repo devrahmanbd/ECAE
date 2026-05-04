@@ -1,5 +1,16 @@
 import asyncio
 import sys
+import os
+
+# Ensure the root project directory is in the python path for absolute imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Suppress HuggingFace hub warnings from polluting stdout (which breaks MCP stdio)
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+import logging
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 import mcp.types as types
