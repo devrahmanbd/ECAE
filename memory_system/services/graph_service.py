@@ -2,6 +2,8 @@ import ast
 import os
 from typing import Dict, Any, List, Set, Tuple
 from memory_system.models.schemas import GraphContext, GraphDependency
+from memory_system.core.logger import logger
+from memory_system.core.logger import logger
 
 class ProjectGraph:
     def __init__(self, root_dir: str):
@@ -84,6 +86,21 @@ class ProjectGraph:
                                 if known_func.endswith(f".{called_func}"):
                                     self._add_edge(func_id, known_func)
 
+    def validate_graph(self) -> Dict[str, Any]:
+        """
+        Validate graph integrity: detect isolated nodes and missing references.
+        """
+        isolated_nodes = []
+        for node in self.nodes:
+            if not self.edges.get(node) and not self.reverse_edges.get(node):
+                isolated_nodes.append(node)
+
+        return {
+            "total_nodes": len(self.nodes),
+            "isolated_nodes": len(isolated_nodes),
+            "isolated_list": isolated_nodes
+        }
+
     def analyze_impact(self, target_node: str) -> Tuple[List[GraphDependency], int]:
         """BFS to find all nodes that depend on target_node."""
         visited: Set[str] = set()
@@ -137,6 +154,7 @@ def get_graph_context(query: str, root_dir: str = ".") -> GraphContext:
     Analyzes the structural graph of the project to determine impact.
     Expects a query containing the target function/entity to analyze.
     """
+    logger.info(f"Analyzing graph context for target: {query}")
     # Simple heuristic: extract the last word as the target entity (e.g., "Fix calculate_ratio")
     target_entity = query.split()[-1].strip("`.,\"'")
 
@@ -156,6 +174,7 @@ def get_graph_context(query: str, root_dir: str = ".") -> GraphContext:
             context=context_msg
         )
     except Exception as e:
+        logger.error(f"Graph context analysis failed: {str(e)}")
         return GraphContext(
             query=query,
             status="exception",

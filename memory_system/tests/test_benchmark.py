@@ -11,7 +11,8 @@ def test_identical_task_comparison():
     import memory_system.services.execution_service as exec_svc
     original_exec = exec_svc.execute_command
 
-    def mock_execute(cmd, **kwargs):
+    def mock_execute(command: str, workdir: str = ".", timeout: int = 60):
+        cmd = command
         from memory_system.models.schemas import ExecutionResult
         # Make the ECAE candidate pass
         if "echo 'deprecating old logic'" in cmd or "echo 'fixing" in cmd:
@@ -40,7 +41,8 @@ def test_reproducibility():
     import memory_system.services.execution_service as exec_svc
     original_exec = exec_svc.execute_command
 
-    def mock_execute(cmd, **kwargs):
+    def mock_execute(command: str, workdir: str = ".", timeout: int = 60):
+        cmd = command
         from memory_system.models.schemas import ExecutionResult
         return ExecutionResult(success=True, stdout="mocked pass", stderr="", exit_code=0)
 

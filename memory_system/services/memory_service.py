@@ -1,3 +1,4 @@
+from memory_system.core.logger import logger
 import uuid
 from typing import List, Optional, Dict, Any
 from qdrant_client.http.models import PointStruct, Filter, FieldCondition, MatchValue, MatchAny
@@ -34,6 +35,7 @@ def store_memory(text: str, metadata: Optional[MemoryMetadata] = None, similarit
     }
 
     point_id = str(uuid.uuid4())
+    logger.info(f"Storing memory point {point_id}")
     client.upsert(
         collection_name=COLLECTION_NAME,
         points=[PointStruct(
@@ -74,6 +76,7 @@ def search_memory(
 
     query_filter = Filter(must=must_conditions) if must_conditions else None
 
+    logger.info(f"Searching memory with limit {limit}")
     results = client.query_points(
         collection_name=COLLECTION_NAME,
         query=vector,
@@ -100,3 +103,25 @@ def search_memory(
         ))
 
     return memories
+
+def cleanup_memory(min_confidence: float = 0.5):
+    """
+    Remove low-confidence memories to prevent unbounded growth.
+    """
+    logger.info(f"Cleaning up memories with confidence < {min_confidence}")
+    try:
+        # In Qdrant, we use delete with a filter
+        client.delete(
+            collection_name=COLLECTION_NAME,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="metadata.confidence",
+                        range={"lt": min_confidence}
+                    )
+                ]
+            )
+        )
+        logger.info("Memory cleanup successful")
+    except Exception as e:
+        logger.error(f"Memory cleanup failed: {str(e)}")

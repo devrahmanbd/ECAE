@@ -1,3 +1,4 @@
+from memory_system.core.logger import logger
 import subprocess
 import os
 from memory_system.models.schemas import ExecutionResult
@@ -11,6 +12,7 @@ def execute_command(command: str, workdir: str = ".", timeout: int = 60) -> Exec
         if "cd " in command and not "cd /tmp" in command and not "cd /app" in command:
             return ExecutionResult(success=False, stdout="", stderr="", error="cd command is forbidden. Use workdir parameter instead.")
 
+        logger.info(f"Executing command: {command}")
         result = subprocess.run(
             command,
             shell=True,
@@ -28,9 +30,25 @@ def execute_command(command: str, workdir: str = ".", timeout: int = 60) -> Exec
         )
 
     except subprocess.TimeoutExpired:
+        logger.warning(f"Command timed out: {command}")
         return ExecutionResult(success=False, stdout="", stderr="", error=f"Command timed out after {timeout} seconds.")
     except Exception as e:
+        logger.error(f"Command failed with exception: {str(e)}")
         return ExecutionResult(success=False, stdout="", stderr="", error=str(e))
+
+import time
+
+def execute_command_with_retry(command: str, workdir: str = ".", timeout: int = 60, retries: int = 2) -> ExecutionResult:
+    attempt = 0
+    while attempt <= retries:
+        result = execute_command(command, workdir, timeout)
+        if result.success or (result.error and "forbidden" in result.error): # Don't retry security errors
+            return result
+        attempt += 1
+        if attempt <= retries:
+            logger.warning(f"Command failed, retrying ({attempt}/{retries})...")
+            time.sleep(1)
+    return result
 
 def run_in_docker(image: str, build_command: str, test_command: str, volumes: dict = None, timeout: int = 60) -> ExecutionResult:
     """
@@ -46,7 +64,7 @@ def run_in_docker(image: str, build_command: str, test_command: str, volumes: di
     # 1. Execute Build Step
     if build_command:
         build_docker_cmd = f"docker run --rm {volume_args} -w /app {image} sh -c \"{build_command}\""
-        build_result = execute_command(build_docker_cmd, timeout=timeout)
+        build_result = execute_command_with_retry(build_docker_cmd, timeout=timeout)
         if not build_result.success:
             return ExecutionResult(
                 success=False,
@@ -58,4 +76,4 @@ def run_in_docker(image: str, build_command: str, test_command: str, volumes: di
 
     # 2. Execute Test Step
     test_docker_cmd = f"docker run --rm {volume_args} -w /app {image} sh -c \"{test_command}\""
-    return execute_command(test_docker_cmd, timeout=timeout)
+    return execute_command_with_retry(test_docker_cmd, timeout=timeout)

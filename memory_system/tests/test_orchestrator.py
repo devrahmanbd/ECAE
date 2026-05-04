@@ -13,7 +13,8 @@ def test_orchestrator_execution_order_and_success():
     import memory_system.services.execution_service as exec_svc
     original_exec = exec_svc.execute_command
 
-    def mock_execute(cmd, **kwargs):
+    def mock_execute(command: str, workdir: str = ".", timeout: int = 60):
+        cmd = command
         from memory_system.models.schemas import ExecutionResult
         return ExecutionResult(success=True, stdout="passed mock", stderr="", exit_code=0)
 
@@ -39,7 +40,8 @@ def test_orchestrator_failure_recovery_behavior():
     original_exec = exec_svc.execute_command
 
     attempts = 0
-    def mock_execute(cmd, **kwargs):
+    def mock_execute(command: str, workdir: str = ".", timeout: int = 60):
+        cmd = command
         nonlocal attempts
         from memory_system.models.schemas import ExecutionResult
         # Only count main test/build phase executions (not setup rm/cp ones)

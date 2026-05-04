@@ -38,7 +38,8 @@ async def test_mcp_call_execute_command():
     import memory_system.services.execution_service as exec_svc
     original_exec = exec_svc.execute_command
 
-    def mock_execute(cmd, **kwargs):
+    def mock_execute(command: str, workdir: str = ".", timeout: int = 60):
+        cmd = command
         from memory_system.models.schemas import ExecutionResult
         return ExecutionResult(success=True, stdout="mocked pass", stderr="", exit_code=0)
 
