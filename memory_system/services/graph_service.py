@@ -1,55 +1,169 @@
-import subprocess
+import ast
 import os
-from memory_system.models.schemas import GraphContext
+from typing import Dict, Any, List, Set, Tuple
+from memory_system.models.schemas import GraphContext, GraphDependency
 
-def get_graph_context(query: str) -> GraphContext:
-    """
-    Use graphify CLI to get context from the knowledge graph.
-    """
-    graphify_out = "graphify-out/graph.json"
+class ProjectGraph:
+    def __init__(self, root_dir: str):
+        self.root_dir = root_dir
+        self.nodes: Dict[str, Dict[str, Any]] = {}
+        self.edges: Dict[str, List[str]] = {} # caller -> list of callees
+        self.reverse_edges: Dict[str, List[str]] = {} # callee -> list of callers
+        self.build_graph()
 
-    if not os.path.exists(graphify_out):
-        return GraphContext(
-            query=query,
-            context="Knowledge graph not found. Run 'graphify update .' first.",
-            status="missing_graph"
-        )
+    def _add_node(self, node_id: str, node_type: str, file_path: str):
+        self.nodes[node_id] = {
+            "type": node_type,
+            "path": file_path
+        }
+        if node_id not in self.edges:
+            self.edges[node_id] = []
+        if node_id not in self.reverse_edges:
+            self.reverse_edges[node_id] = []
+
+    def _add_edge(self, caller: str, callee: str):
+        if caller not in self.edges:
+            self.edges[caller] = []
+        if callee not in self.reverse_edges:
+            self.reverse_edges[callee] = []
+
+        if callee not in self.edges[caller]:
+            self.edges[caller].append(callee)
+        if caller not in self.reverse_edges[callee]:
+            self.reverse_edges[callee].append(caller)
+
+    def build_graph(self):
+        for root, _, files in os.walk(self.root_dir):
+            for file in files:
+                if file.endswith('.py') and not file.startswith('__'):
+                    file_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(file_path, self.root_dir)
+                    self._parse_file(file_path, rel_path)
+
+    def _parse_file(self, file_path: str, rel_path: str):
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            tree = ast.parse(content, filename=file_path)
+        except Exception:
+            return
+
+        module_name = rel_path.replace(os.path.sep, '.').replace('.py', '')
+        self._add_node(module_name, "module", rel_path)
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
+                func_name = node.name
+                func_id = f"{module_name}.{func_name}"
+
+                node_type = "function"
+                if func_name.startswith("test_"):
+                    node_type = "test"
+                # Simple heuristic for APIs (if it has decorators like @app.get)
+                elif any(isinstance(d, ast.Call) and hasattr(d.func, "attr") and d.func.attr in ["get", "post", "put", "delete"] for d in node.decorator_list):
+                    node_type = "api"
+
+                self._add_node(func_id, node_type, rel_path)
+                self._add_edge(module_name, func_id)
+
+                # Look for function calls inside this function
+                for sub_node in ast.walk(node):
+                    if isinstance(sub_node, ast.Call):
+                        called_func = None
+                        if isinstance(sub_node.func, ast.Name):
+                            called_func = sub_node.func.id
+                        elif isinstance(sub_node.func, ast.Attribute):
+                            called_func = sub_node.func.attr
+
+                        if called_func:
+                            # We add a generic reverse mapping from short name to full func ID
+                            self._add_edge(func_id, called_func)
+
+                            # Also see if we can resolve it to a known module function (naive approach)
+                            for known_func in list(self.nodes.keys()):
+                                if known_func.endswith(f".{called_func}"):
+                                    self._add_edge(func_id, known_func)
+
+    def analyze_impact(self, target_node: str) -> Tuple[List[GraphDependency], int]:
+        """BFS to find all nodes that depend on target_node."""
+        visited: Set[str] = set()
+        queue = [target_node]
+        impacted = []
+
+        # Find actual fully qualified node names that match the target_node
+        start_nodes = [n for n in self.nodes.keys() if target_node in n.split('.')]
+        if not start_nodes:
+            # Fallback: Check if we have edges matching the short name
+            if target_node in self.reverse_edges:
+                start_nodes = [target_node]
+            else:
+                return [], 0
+
+        queue = list(start_nodes)
+
+        while queue:
+            current = queue.pop(0)
+            if current in visited:
+                continue
+            visited.add(current)
+
+            # Record impact (skip the starting node itself unless it's recursively called)
+            if current not in start_nodes and current in self.nodes:
+                node_info = self.nodes[current]
+
+                risk = "low"
+                if node_info["type"] == "api":
+                    risk = "high"
+                elif node_info["type"] == "module":
+                    risk = "medium"
+
+                impacted.append(GraphDependency(
+                    entity=current,
+                    type=node_info["type"],
+                    risk_level=risk,
+                    path=node_info["path"]
+                ))
+
+            # Add dependents to queue
+            if current in self.reverse_edges:
+                for dependent in self.reverse_edges[current]:
+                    if dependent not in visited:
+                        queue.append(dependent)
+
+        return impacted, len(visited) - len(start_nodes)
+
+def get_graph_context(query: str, root_dir: str = ".") -> GraphContext:
+    """
+    Analyzes the structural graph of the project to determine impact.
+    Expects a query containing the target function/entity to analyze.
+    """
+    # Simple heuristic: extract the last word as the target entity (e.g., "Fix calculate_ratio")
+    target_entity = query.split()[-1].strip("`.,\"'")
 
     try:
-        # Try to use 'graphify query' for BFS traversal
-        cmd = f"PYTHONPATH=./graphify python3 -m graphify query \"{query}\" --graph {graphify_out}"
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=30
+        graph = ProjectGraph(root_dir)
+        impacted, blast_radius = graph.analyze_impact(target_entity)
+
+        context_msg = f"Found {blast_radius} impacted dependencies for {target_entity}."
+        if blast_radius == 0:
+            context_msg = f"No structural impact detected or entity '{target_entity}' not found."
+
+        return GraphContext(
+            query=query,
+            impacted_dependencies=impacted,
+            blast_radius=blast_radius,
+            status="success",
+            context=context_msg
         )
-
-        if result.returncode == 0:
-            return GraphContext(
-                query=query,
-                context=result.stdout.strip(),
-                status="success"
-            )
-        else:
-            return GraphContext(
-                query=query,
-                context=f"Error running graphify: {result.stderr}",
-                status="error"
-            )
-
     except Exception as e:
         return GraphContext(
             query=query,
-            context=str(e),
-            status="exception"
+            status="exception",
+            context=str(e)
         )
 
-def get_graph_report():
-    """Read the GRAPH_REPORT.md file."""
-    report_path = "graphify-out/GRAPH_REPORT.md"
-    if os.path.exists(report_path):
-        with open(report_path, "r") as f:
-            return f.read()
-    return "Report not found."
+def get_graph_report() -> Dict[str, Any]:
+    return {
+        "status": "ok",
+        "message": "Graph system uses active BFS AST traversal."
+    }
