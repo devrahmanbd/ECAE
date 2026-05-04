@@ -1,30 +1,79 @@
+from memory_system.core.logger import logger
 import subprocess
-from typing import Dict, Tuple, Optional
+import os
+from memory_system.models.schemas import ExecutionResult
 
-def run_in_docker(image: str, command: str, volumes: Optional[Dict[str, str]] = None) -> Tuple[bool, str, str]:
+def execute_command(command: str, workdir: str = ".", timeout: int = 60) -> ExecutionResult:
     """
-    Run a command in an ephemeral Docker container.
+    Execute a command in a subprocess.
     """
-    docker_cmd = ["docker", "run", "--rm"]
-
-    if volumes:
-        for host_path, container_path in volumes.items():
-            docker_cmd.extend(["-v", f"{host_path}:{container_path}"])
-
-    docker_cmd.extend(["-w", "/app"])
-    docker_cmd.append(image)
-    docker_cmd.extend(["sh", "-c", command])
-
     try:
+        # Simple security check: prevent cd outside sandbox bounds
+        if "cd " in command and not "cd /tmp" in command and not "cd /app" in command:
+            return ExecutionResult(success=False, stdout="", stderr="", error="cd command is forbidden. Use workdir parameter instead.")
+
+        logger.info(f"Executing command: {command}")
         result = subprocess.run(
-            docker_cmd,
+            command,
+            shell=True,
             capture_output=True,
             text=True,
-            check=False
+            cwd=workdir,
+            timeout=timeout
         )
-        return (result.returncode == 0, result.stdout, result.stderr)
-    except Exception as e:
-        return (False, "", str(e))
 
-def execute_command(command: str, workdir: str = "."):
-    return run_in_docker("alpine:latest", command, volumes={workdir: "/app"})
+        return ExecutionResult(
+            success=result.returncode == 0,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            exit_code=result.returncode
+        )
+
+    except subprocess.TimeoutExpired:
+        logger.warning(f"Command timed out: {command}")
+        return ExecutionResult(success=False, stdout="", stderr="", error=f"Command timed out after {timeout} seconds.")
+    except Exception as e:
+        logger.error(f"Command failed with exception: {str(e)}")
+        return ExecutionResult(success=False, stdout="", stderr="", error=str(e))
+
+import time
+
+def execute_command_with_retry(command: str, workdir: str = ".", timeout: int = 60, retries: int = 2) -> ExecutionResult:
+    attempt = 0
+    while attempt <= retries:
+        result = execute_command(command, workdir, timeout)
+        if result.success or (result.error and "forbidden" in result.error): # Don't retry security errors
+            return result
+        attempt += 1
+        if attempt <= retries:
+            logger.warning(f"Command failed, retrying ({attempt}/{retries})...")
+            time.sleep(1)
+    return result
+
+def run_in_docker(image: str, build_command: str, test_command: str, volumes: dict = None, timeout: int = 60) -> ExecutionResult:
+    """
+    Run a command inside a Docker container natively.
+    Separates build phase from test phase.
+    """
+    volume_args = ""
+    if volumes:
+        for host_path, container_path in volumes.items():
+            abs_host_path = os.path.abspath(host_path)
+            volume_args += f"-v {abs_host_path}:{container_path} "
+
+    # 1. Execute Build Step
+    if build_command:
+        build_docker_cmd = f"docker run --rm {volume_args} -w /app {image} sh -c \"{build_command}\""
+        build_result = execute_command_with_retry(build_docker_cmd, timeout=timeout)
+        if not build_result.success:
+            return ExecutionResult(
+                success=False,
+                stdout=build_result.stdout,
+                stderr=f"Build Phase Failed: {build_result.stderr}",
+                exit_code=build_result.exit_code,
+                error="Build failure"
+            )
+
+    # 2. Execute Test Step
+    test_docker_cmd = f"docker run --rm {volume_args} -w /app {image} sh -c \"{test_command}\""
+    return execute_command_with_retry(test_docker_cmd, timeout=timeout)
