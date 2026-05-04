@@ -54,3 +54,12 @@ class ExecutionResult(BaseModel):
     stderr: str
     exit_code: Optional[int] = None
     error: Optional[str] = None
+
+# Phase 5: Decision Engine Structure
+class CandidatePlan(BaseModel):
+    id: str
+    strategy: str
+    commands: List[str]
+    score: float = 0.0
+    safe: bool = True
+    rejection_reason: Optional[str] = None
