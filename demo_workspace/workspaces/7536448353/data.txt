@@ -1,5 +1,0 @@
-user1@example.com	password123	client_id_1	client_secret_1	tenant_id_1	sub_id_1
-user2@example.com	password123	client_id_2	client_secret_2	tenant_id_2	sub_id_2
-user3@example.com	password123	client_id_3	client_secret_3	tenant_id_3	sub_id_3
-user4@example.com	password123	client_id_4	client_secret_4	tenant_id_4	sub_id_4
-user5@example.com	password123	client_id_5	client_secret_5	tenant_id_5	sub_id_5
