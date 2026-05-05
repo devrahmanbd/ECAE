@@ -93,6 +93,15 @@ async def list_prompts() -> list[types.Prompt]:
         types.Prompt(
             name="agent_rules",
             description="System rules for IDE integration.",
+            arguments=[]
+        )
+    ]
+
+@server.get_prompt()
+async def get_prompt(name: str, arguments: dict | None = None) -> types.GetPromptResult:
+    if name == "agent_rules":
+        return types.GetPromptResult(
+            description="System rules for IDE integration.",
             messages=[
                 types.PromptMessage(
                     role="user",
@@ -108,7 +117,7 @@ async def list_prompts() -> list[types.Prompt]:
                 )
             ]
         )
-    ]
+    raise ValueError(f"Prompt not found: {name}")
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:

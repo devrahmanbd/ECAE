@@ -22,10 +22,6 @@ async def test_mcp_list_prompts():
     assert len(prompts) == 1
     prompt = prompts[0]
     assert prompt.name == "agent_rules"
-    text = prompt.messages[0].content.text
-    assert "Call search_memory FIRST" in text
-    assert "Call get_graph_context SECOND" in text
-    assert "Call execute_command" in text
 
 @pytest.mark.asyncio
 async def test_mcp_call_search_memory():
