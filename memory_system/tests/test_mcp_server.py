@@ -9,8 +9,9 @@ def setup_module(module):
 @pytest.mark.asyncio
 async def test_mcp_list_tools():
     tools = await list_tools()
-    assert len(tools) == 4
+    assert len(tools) == 5
     tool_names = [t.name for t in tools]
+    assert "ecae_cli" in tool_names
     assert "search_memory" in tool_names
     assert "get_graph_context" in tool_names
     assert "execute_command" in tool_names

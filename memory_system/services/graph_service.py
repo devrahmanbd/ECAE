@@ -1,8 +1,8 @@
 import ast
 import os
+import json
 from typing import Dict, Any, List, Set, Tuple
 from memory_system.models.schemas import GraphContext, GraphDependency
-from memory_system.core.logger import logger
 from memory_system.core.logger import logger
 
 class ProjectGraph:
@@ -86,6 +86,54 @@ class ProjectGraph:
                                 if known_func.endswith(f".{called_func}"):
                                     self._add_edge(func_id, known_func)
 
+    def trace_graph_path(self, start_node: str, end_node: str) -> List[str]:
+        """BFS to find the shortest path between start_node and end_node."""
+        start_nodes = [n for n in self.nodes.keys() if start_node in n.split('.') or start_node == n]
+        if not start_nodes and start_node in self.reverse_edges:
+            start_nodes = [start_node]
+
+        if not start_nodes:
+            start_nodes = [start_node]
+
+        start = start_nodes[0]
+
+        queue = [(start, [start])]
+        visited = set([start])
+
+        while queue:
+            current, path = queue.pop(0)
+
+            if end_node in current.split('.') or end_node == current:
+                return path
+
+            if current in self.edges:
+                for neighbor in self.edges[current]:
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append((neighbor, path + [neighbor]))
+
+        return []
+
+    def explain_graph_node(self, node: str) -> Dict[str, Any]:
+        """Return detailed information about a node and its connections."""
+        target_nodes = [n for n in self.nodes.keys() if node in n.split('.') or node == n]
+        actual_node = target_nodes[0] if target_nodes else node
+
+        if actual_node not in self.nodes and actual_node not in self.edges and actual_node not in self.reverse_edges:
+            return {"error": f"Node '{node}' not found in graph."}
+
+        node_info = self.nodes.get(actual_node, {"type": "unknown", "path": "unknown"})
+        callers = self.reverse_edges.get(actual_node, [])
+        callees = self.edges.get(actual_node, [])
+
+        return {
+            "node": actual_node,
+            "type": node_info["type"],
+            "path": node_info["path"],
+            "called_by": list(set(callers)),
+            "calls": list(set(callees))
+        }
+
     def validate_graph(self) -> Dict[str, Any]:
         """
         Validate graph integrity: detect isolated nodes and missing references.
@@ -104,11 +152,15 @@ class ProjectGraph:
     def analyze_impact(self, target_node: str) -> Tuple[List[GraphDependency], int]:
         """BFS to find all nodes that depend on target_node."""
         visited: Set[str] = set()
-        queue = [target_node]
         impacted = []
 
+        # Normalize target_node to handle '.py' extentions and paths
+        target_node = target_node.replace(".py", "")
+        target_node = target_node.replace(os.path.sep, ".")
+        target_node = target_node.strip("`.,\"'")
+
         # Find actual fully qualified node names that match the target_node
-        start_nodes = [n for n in self.nodes.keys() if target_node in n.split('.')]
+        start_nodes = [n for n in self.nodes.keys() if target_node in n.split('.') or target_node == n]
         if not start_nodes:
             # Fallback: Check if we have edges matching the short name
             if target_node in self.reverse_edges:
@@ -149,37 +201,82 @@ class ProjectGraph:
 
         return impacted, len(visited) - len(start_nodes)
 
+def _parse_query_list(query: str) -> List[str]:
+    """Parse query string, which could be a JSON array string or a space-separated list."""
+    try:
+        # Try to parse as JSON array
+        parsed = json.loads(query)
+        if isinstance(parsed, list):
+            return [str(item) for item in parsed]
+    except Exception:
+        pass
+
+    # Fallback: split by space
+    return [q.strip() for q in query.split()]
+
 def get_graph_context(query: str, root_dir: str = ".") -> GraphContext:
     """
     Analyzes the structural graph of the project to determine impact.
     Expects a query containing the target function/entity to analyze.
     """
     logger.info(f"Analyzing graph context for target: {query}")
-    # Simple heuristic: extract the last word as the target entity (e.g., "Fix calculate_ratio")
-    target_entity = query.split()[-1].strip("`.,\"'")
 
     try:
         graph = ProjectGraph(root_dir)
-        impacted, blast_radius = graph.analyze_impact(target_entity)
 
-        context_msg = f"Found {blast_radius} impacted dependencies for {target_entity}."
-        if blast_radius == 0:
-            context_msg = f"No structural impact detected or entity '{target_entity}' not found."
+        # 1. Query Formatting Bug Fix
+        target_entities = _parse_query_list(query)
+
+        all_impacted = []
+        total_blast_radius = 0
+        entities_not_found = []
+
+        for target in target_entities:
+            impacted, blast_radius = graph.analyze_impact(target)
+            if blast_radius == 0:
+                entities_not_found.append(target)
+            else:
+                all_impacted.extend(impacted)
+                total_blast_radius += blast_radius
+
+        # Deduplicate impacted dependencies
+        unique_impacted = {dep.entity: dep for dep in all_impacted}.values()
+
+        if total_blast_radius == 0:
+            context_msg = f"Entities {entities_not_found} not found or have no structural impact."
+            # 3. Silent Failure Pattern Fix: Use explicit "not_found" status
+            status = "not_found"
+        else:
+            context_msg = f"Found {total_blast_radius} impacted dependencies for {target_entities}."
+            status = "success"
+
+        # 11. Graph Not Built / Indexed Missing Detection Fix
+        graph_loaded = len(graph.nodes) > 0
 
         return GraphContext(
             query=query,
-            impacted_dependencies=impacted,
-            blast_radius=blast_radius,
-            status="success",
-            context=context_msg
+            impacted_dependencies=list(unique_impacted),
+            blast_radius=total_blast_radius,
+            status=status,
+            context=context_msg,
+            graph_loaded=graph_loaded
         )
     except Exception as e:
         logger.error(f"Graph context analysis failed: {str(e)}")
         return GraphContext(
             query=query,
             status="exception",
-            context=str(e)
+            context=str(e),
+            graph_loaded=False
         )
+
+def trace_graph_path(node_a: str, node_b: str, root_dir: str = ".") -> List[str]:
+    graph = ProjectGraph(root_dir)
+    return graph.trace_graph_path(node_a, node_b)
+
+def explain_graph_node(node: str, root_dir: str = ".") -> Dict[str, Any]:
+    graph = ProjectGraph(root_dir)
+    return graph.explain_graph_node(node)
 
 def get_graph_report() -> Dict[str, Any]:
     return {

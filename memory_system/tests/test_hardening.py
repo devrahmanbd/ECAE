@@ -28,7 +28,7 @@ def test_graph_missing_directory_recovery():
     result = get_graph_context("test_query", root_dir="/path/that/does/not/exist")
 
     # Should not crash, should return graceful graph context
-    assert result.status == "success"
+    assert result.status == "not_found"
     assert result.blast_radius == 0
     assert len(result.impacted_dependencies) == 0
 

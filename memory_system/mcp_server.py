@@ -27,6 +27,17 @@ server = Server("memory-system-agent")
 async def list_tools() -> list[types.Tool]:
     return [
         types.Tool(
+            name="ecae_cli",
+            description="Process a raw /ecae CLI command (e.g. '/ecae . --task \"fix bug\"' or '/ecae explain \"node\"').",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "The full /ecae command string"}
+                },
+                "required": ["command"]
+            }
+        ),
+        types.Tool(
             name="search_memory",
             description="Retrieve relevant project context and past decisions using semantic search. MUST be called first.",
             inputSchema={
@@ -43,7 +54,7 @@ async def list_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "The target entity to analyze (e.g. 'core_logic')"},
+                    "query": {"type": "string", "description": "A single target entity or a space-separated list or JSON array of target entities to analyze (e.g. 'main.py filter_duplicate.py')"},
                     "root_dir": {"type": "string", "description": "The project root dir", "default": "."}
                 },
                 "required": ["query"]
@@ -87,7 +98,12 @@ async def list_prompts() -> list[types.Prompt]:
                     role="user",
                     content=types.TextContent(
                         type="text",
-                        text="You are an ECAE-lite agent. You MUST follow these rules strictly:\n1. Call search_memory FIRST to retrieve prior decisions and failure patterns.\n2. Call get_graph_context SECOND to check structural impact before coding.\n3. Call execute_command to validate your work before declaring completion.\n4. Summarize your plan, graph risk, affected files, and validation result clearly to the user."
+                        text="You are an ECAE-lite agent. You MUST follow these rules strictly:\n"
+                             "1. Call search_memory FIRST to retrieve prior decisions and failure patterns.\n"
+                             "2. Call get_graph_context SECOND to check structural impact before coding.\n"
+                             "3. Call execute_command to validate your work before declaring completion.\n"
+                             "4. Summarize your plan, graph risk, affected files, and validation result clearly to the user.\n"
+                             "5. If the user provides an /ecae command, use the ecae_cli tool to execute it directly and return the result."
                     )
                 )
             ]
@@ -97,7 +113,12 @@ async def list_prompts() -> list[types.Prompt]:
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     try:
-        if name == "search_memory":
+        if name == "ecae_cli":
+            from memory_system.cli_parser import parse_and_route_ecae_command
+            res_str = parse_and_route_ecae_command(arguments["command"])
+            return [types.TextContent(type="text", text=res_str)]
+
+        elif name == "search_memory":
             results = search_memory(arguments["query"])
             res_str = "\n".join([f"ID: {r.id}, Text: {r.text}, Score: {r.score}" for r in results])
             return [types.TextContent(type="text", text=res_str if res_str else "No memories found.")]
