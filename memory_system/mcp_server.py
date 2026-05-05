@@ -19,6 +19,7 @@ from memory_system.services.memory_service import search_memory, store_memory
 from memory_system.services.graph_service import get_graph_context
 from memory_system.services.execution_service import run_in_docker
 from memory_system.models.schemas import MemoryMetadata
+from memory_system.services.workspace_service import detect_workspace, init_project
 
 # The server wrapper representing the Agent
 server = Server("memory-system-agent")
@@ -133,7 +134,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             return [types.TextContent(type="text", text=res_str if res_str else "No memories found.")]
 
         elif name == "get_graph_context":
-            ctx = get_graph_context(arguments["query"], root_dir=arguments.get("root_dir", "."))
+            resolved_root = detect_workspace(arguments.get("root_dir", "."))
+            ctx = get_graph_context(arguments["query"], root_dir=resolved_root)
             return [types.TextContent(type="text", text=ctx.model_dump_json())]
             
         elif name == "store_memory":
@@ -143,7 +145,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             return [types.TextContent(type="text", text=f"Stored memory: {result.id if result else 'Duplicate'}")]
         
         elif name == "execute_command":
-            volumes = {arguments.get("workspace_dir", "."): "/app"}
+            resolved_workspace = detect_workspace(arguments.get("workspace_dir", "."))
+            volumes = {os.path.abspath(resolved_workspace): "/app"}
             res = run_in_docker(
                 image=arguments.get("image", "python:3.11-slim"),
                 build_command=arguments.get("build_command", ""),
@@ -159,6 +162,14 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         return [types.TextContent(type="text", text=f"Error executing tool: {str(e)}")]
 
 async def main():
+    # Detect workspace and ensure graph is initialized before serving
+    workspace_dir = detect_workspace(".")
+    try:
+        init_project(workspace_dir)
+        logging.info(f"Initialized workspace at {workspace_dir}")
+    except Exception as e:
+        logging.error(f"Failed to initialize workspace: {e}")
+
     async with stdio_server() as streams:
         await server.run(streams[0], streams[1], server.create_initialization_options())
 

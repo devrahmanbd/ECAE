@@ -169,6 +169,15 @@ Workflow must stop if:
 
 ---
 
-## Final Principle
+## End State
 
-**Graph de
+- Predict
+- Filter
+- Optimize
+- Generate
+- Execute
+- Read result
+- Learn from success and failure
+- Repeat until stop condition
+
+Do not answer from memory alone. Do not answer from graph alone. Do not answer from execution alone. Use the required tool for the required layer.
