@@ -43,7 +43,7 @@ async def list_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "The target entity to analyze (e.g. 'core_logic')"},
+                    "query": {"type": "string", "description": "A single target entity or a space-separated list or JSON array of target entities to analyze (e.g. 'main.py filter_duplicate.py')"},
                     "root_dir": {"type": "string", "description": "The project root dir", "default": "."}
                 },
                 "required": ["query"]

@@ -41,6 +41,7 @@ class GraphContext(BaseModel):
     blast_radius: Optional[int] = 0
     status: str = "success"
     context: Optional[str] = None
+    graph_loaded: bool = True
 
 # Phase 2: Execution Result Structure
 class ExecuteRequest(BaseModel):

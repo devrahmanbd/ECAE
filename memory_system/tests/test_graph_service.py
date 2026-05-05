@@ -78,6 +78,6 @@ def test_graph_no_impact():
         # Impact of a non-existent function
         result = get_graph_context("Change nonexistent_function", root_dir=tmpdir)
 
-        assert result.status == "success"
+        assert result.status == "not_found"
         assert result.blast_radius == 0
         assert len(result.impacted_dependencies) == 0
