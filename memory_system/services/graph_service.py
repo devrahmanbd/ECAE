@@ -1,4 +1,3 @@
-
 import ast
 import os
 import json
@@ -86,6 +85,54 @@ class ProjectGraph:
                             for known_func in list(self.nodes.keys()):
                                 if known_func.endswith(f".{called_func}"):
                                     self._add_edge(func_id, known_func)
+
+    def trace_graph_path(self, start_node: str, end_node: str) -> List[str]:
+        """BFS to find the shortest path between start_node and end_node."""
+        start_nodes = [n for n in self.nodes.keys() if start_node in n.split('.') or start_node == n]
+        if not start_nodes and start_node in self.reverse_edges:
+            start_nodes = [start_node]
+
+        if not start_nodes:
+            start_nodes = [start_node]
+
+        start = start_nodes[0]
+
+        queue = [(start, [start])]
+        visited = set([start])
+
+        while queue:
+            current, path = queue.pop(0)
+
+            if end_node in current.split('.') or end_node == current:
+                return path
+
+            if current in self.edges:
+                for neighbor in self.edges[current]:
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append((neighbor, path + [neighbor]))
+
+        return []
+
+    def explain_graph_node(self, node: str) -> Dict[str, Any]:
+        """Return detailed information about a node and its connections."""
+        target_nodes = [n for n in self.nodes.keys() if node in n.split('.') or node == n]
+        actual_node = target_nodes[0] if target_nodes else node
+
+        if actual_node not in self.nodes and actual_node not in self.edges and actual_node not in self.reverse_edges:
+            return {"error": f"Node '{node}' not found in graph."}
+
+        node_info = self.nodes.get(actual_node, {"type": "unknown", "path": "unknown"})
+        callers = self.reverse_edges.get(actual_node, [])
+        callees = self.edges.get(actual_node, [])
+
+        return {
+            "node": actual_node,
+            "type": node_info["type"],
+            "path": node_info["path"],
+            "called_by": list(set(callers)),
+            "calls": list(set(callees))
+        }
 
     def validate_graph(self) -> Dict[str, Any]:
         """
@@ -222,6 +269,14 @@ def get_graph_context(query: str, root_dir: str = ".") -> GraphContext:
             context=str(e),
             graph_loaded=False
         )
+
+def trace_graph_path(node_a: str, node_b: str, root_dir: str = ".") -> List[str]:
+    graph = ProjectGraph(root_dir)
+    return graph.trace_graph_path(node_a, node_b)
+
+def explain_graph_node(node: str, root_dir: str = ".") -> Dict[str, Any]:
+    graph = ProjectGraph(root_dir)
+    return graph.explain_graph_node(node)
 
 def get_graph_report() -> Dict[str, Any]:
     return {
