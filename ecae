@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# Find the absolute path to the directory containing this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Assuming the repository root is where this script is located
+REPO_ROOT="$SCRIPT_DIR"
+
+# Launch the CLI parser tool inside our environment
+PYTHONPATH="$REPO_ROOT" python -c "
+import sys
+from memory_system.cli_parser import parse_and_route_ecae_command
+
+# The first argument is the script name, the rest are arguments to /ecae
+command_args = ' '.join(sys.argv[1:])
+# We simulate the exact structure the MCP server would receive
+command_string = f'/ecae {command_args}'
+
+try:
+    result = parse_and_route_ecae_command(command_string)
+    print(result)
+except Exception as e:
+    print(f'ECAE Error: {str(e)}')
+    sys.exit(1)
+" "$@"
