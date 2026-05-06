@@ -1,7 +1,7 @@
 from typing import Dict, Any, List
 import os
 from enum import Enum
-from memory_system.models.schemas import GraphContext, MemoryMetadata
+from memory_system.models.schemas import GraphContext, MemoryMetadata, CandidatePlan
 from memory_system.services.graph_service import get_graph_context
 from memory_system.services.memory_service import search_memory, store_memory
 from memory_system.services.execution_service import run_in_docker
@@ -11,38 +11,47 @@ from rich.console import Console
 console = Console()
 
 class OrchestratorState(Enum):
-    IDLE = 0
     WORKSPACE_CHECK = 1
-    FETCH_GRAPH_CONTEXT = 2
-    FETCH_MEMORY = 3
-    PLAN_AND_BRANCH = 4
-    SANDBOX_EXECUTION = 5
-    STORE_MEMORY = 6
-    STOP = 7
+    GRAPH_LOAD = 2
+    MEMORY_LOAD = 3
+    PREDICT = 4
+    FILTER = 5
+    OPTIMIZE = 6
+    GENERATE = 7
+    EXECUTE = 8
+    RESULT = 9
+    LEARN = 10
+    STOP = 11
 
 class AgentOrchestrator:
     def __init__(self, max_iterations: int = 3):
-        self.state = OrchestratorState.IDLE
+        self.state = OrchestratorState.WORKSPACE_CHECK
         self.decision_engine = DecisionEngine()
         self.max_iterations = max_iterations
 
     def _record_failure(self, task_query: str, reason: str, tags: List[str]):
         """Helper to ensure memory is written on EVERY stop, exception, and failure."""
         console.print(f"[bold red]Recording Failure Memory: {reason}[/bold red]")
-        store_memory(
-            text=f"Outcome for task: {task_query} resulted in failure: {reason}",
-            metadata=MemoryMetadata(
-                memory_type="causal",
-                outcome="failure",
-                reasoning=reason,
-                tags=tags,
-                confidence=1.0
+        try:
+            store_memory(
+                text=f"Outcome for task: {task_query} resulted in failure: {reason}",
+                metadata=MemoryMetadata(
+                    memory_type="causal",
+                    outcome="failure",
+                    reasoning=reason,
+                    tags=tags,
+                    confidence=1.0
+                )
             )
-        )
+        except Exception as e:
+            console.print(f"[bold red]FATAL: Memory layer unavailable during failure record: {e}[/bold red]")
+            # If memory cannot be written -> STOP immediately
+        self.state = OrchestratorState.STOP
 
     def process_task(self, task_query: str, workspace_dir: str = ".") -> Dict[str, Any]:
         """
-        Executes the predictive engineering loop with repeat.
+        Executes the deterministic state machine loop.
+        Predict -> Filter -> Optimize -> Generate -> Execute -> Result -> Learn
         """
         console.print(f"[bold blue]Starting Task:[/bold blue] {task_query}")
 
@@ -50,7 +59,6 @@ class AgentOrchestrator:
         if not os.path.exists(workspace_dir):
             reason = "No workspace detected"
             self._record_failure(task_query, reason, ["workspace_error"])
-            self.state = OrchestratorState.STOP
             return {"status": "stop", "reason": reason}
 
         iteration = 0
@@ -60,8 +68,8 @@ class AgentOrchestrator:
             iteration += 1
             console.print(f"\n[bold magenta]=== Iteration {iteration}/{self.max_iterations} ===[/bold magenta]")
 
-            # Phase: Graph First
-            self.state = OrchestratorState.FETCH_GRAPH_CONTEXT
+            # 1. GRAPH LOAD
+            self.state = OrchestratorState.GRAPH_LOAD
             console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Fetching dependency graph...")
             try:
                 graph_context = get_graph_context(task_query, root_dir=workspace_dir)
@@ -70,49 +78,63 @@ class AgentOrchestrator:
             except Exception as e:
                 reason = "Graph unavailable or stale"
                 self._record_failure(task_query, reason, ["graph_error"])
-                self.state = OrchestratorState.STOP
                 return {"status": "stop", "reason": reason}
             console.print(f"[dim]Impacted Dependencies: {len(graph_context.impacted_dependencies or [])}[/dim]")
 
-            # Phase: Memory Second
-            self.state = OrchestratorState.FETCH_MEMORY
+            # 2. MEMORY LOAD
+            self.state = OrchestratorState.MEMORY_LOAD
             console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Checking Qdrant for past experiences...")
             try:
                 past_memories = search_memory(task_query)
             except Exception:
                 reason = "Memory layer unavailable"
                 self._record_failure(task_query, reason, ["memory_error"])
-                self.state = OrchestratorState.STOP
                 return {"status": "stop", "reason": reason}
             console.print(f"[dim]Found {len(past_memories)} relevant past memories.[/dim]")
 
-            # Phase: Planning (Predict, Filter, Optimize, Generate)
-            self.state = OrchestratorState.PLAN_AND_BRANCH
-            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Generating candidate fixes...")
-
+            # 3. PREDICT
+            self.state = OrchestratorState.PREDICT
+            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Predicting candidates...")
             try:
-                best_candidate = self.decision_engine.evaluate_and_select(task_query, graph_context, past_memories)
-                if not best_candidate:
-                    console.print("[bold red]No safe candidates found. Rejecting task.[/bold red]")
-                    self._record_failure(task_query, "No safe candidates.", ["planning_rejection"])
-                    return {"status": "rejected", "reason": "No safe candidates.", "iterations": iteration}
+                raw_candidates = self.decision_engine.generate_candidates(task_query, graph_context, past_memories)
             except Exception:
                 reason = "Tool call failed or returned malformed output"
                 self._record_failure(task_query, reason, ["tool_error"])
-                self.state = OrchestratorState.STOP
                 return {"status": "stop", "reason": reason}
 
-            console.print(f"[bold green]Selected Candidate:[/bold green] {best_candidate.id} with utility score {best_candidate.score}")
+            # 4. FILTER
+            self.state = OrchestratorState.FILTER
+            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Filtering unsafe paths...")
+            try:
+                evaluated = []
+                for cand in raw_candidates:
+                    evaluated.append(self.decision_engine.apply_constraints(cand, graph_context, past_memories))
+                safe_candidates = [c for c in evaluated if c.safe]
+                if not safe_candidates:
+                    reason = "No safe candidates found"
+                    self._record_failure(task_query, reason, ["filter_rejection"])
+                    return {"status": "stop", "reason": reason}
+            except Exception:
+                reason = "Tool call failed or returned malformed output"
+                self._record_failure(task_query, reason, ["tool_error"])
+                return {"status": "stop", "reason": reason}
 
-            # Phase: Execution Third
-            self.state = OrchestratorState.SANDBOX_EXECUTION
-            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Testing candidates in isolated Docker sandbox...")
+            # 5. OPTIMIZE
+            self.state = OrchestratorState.OPTIMIZE
+            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Optimizing selection...")
+            best_candidate = max(safe_candidates, key=lambda c: c.score)
 
-            abs_workspace = os.path.abspath(workspace_dir)
-            volumes = {abs_workspace: "/app"}
-
+            # 6. GENERATE
+            self.state = OrchestratorState.GENERATE
+            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Generating concrete execution steps...")
             build_command = best_candidate.commands[0] if len(best_candidate.commands) > 0 else ""
             test_command = "pytest"
+
+            # 7. EXECUTE
+            self.state = OrchestratorState.EXECUTE
+            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Testing candidate in isolated Docker sandbox...")
+            abs_workspace = os.path.abspath(workspace_dir)
+            volumes = {abs_workspace: "/app"}
 
             try:
                 execution_result = run_in_docker(
@@ -125,28 +147,39 @@ class AgentOrchestrator:
             except Exception:
                 reason = "Execution sandbox unavailable"
                 self._record_failure(task_query, reason, ["sandbox_error"])
-                self.state = OrchestratorState.STOP
                 return {"status": "stop", "reason": reason}
 
-            # Phase: Learn
-            self.state = OrchestratorState.STORE_MEMORY
+            # 8. RESULT
+            self.state = OrchestratorState.RESULT
+            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Reading result...")
             outcome_status = "success" if execution_result.success else "failure"
-            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Recording experience to Causal Experience Graph (Qdrant)...")
-
-            store_memory(
-                text=f"Outcome for task: {task_query} using strategy: {best_candidate.strategy}",
-                metadata=MemoryMetadata(
-                    memory_type="causal",
-                    decision=best_candidate.strategy,
-                    outcome=outcome_status,
-                    tags=["execution_feedback"],
-                    confidence=best_candidate.score
-                )
-            )
-
             if execution_result.success:
                 console.print(f"[green]✔ {best_candidate.id} passed execution sandbox.[/green]")
-                self.state = OrchestratorState.IDLE
+            else:
+                console.print(f"[red]✘ {best_candidate.id} failed execution sandbox.[/red]")
+                console.print(f"[dim]{execution_result.stderr}[/dim]")
+
+            # 9. LEARN
+            self.state = OrchestratorState.LEARN
+            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Learning from {outcome_status}...")
+
+            try:
+                store_memory(
+                    text=f"Outcome for task: {task_query} using strategy: {best_candidate.strategy}",
+                    metadata=MemoryMetadata(
+                        memory_type="causal",
+                        decision=best_candidate.strategy,
+                        outcome=outcome_status,
+                        tags=["execution_feedback"],
+                        confidence=best_candidate.score
+                    )
+                )
+            except Exception as e:
+                console.print(f"[bold red]FATAL: Memory layer unavailable during learning: {e}[/bold red]")
+                self.state = OrchestratorState.STOP
+                return {"status": "stop", "reason": "Memory layer unavailable"}
+
+            if execution_result.success:
                 console.print("[bold blue]Task Complete - Success[/bold blue]")
                 return {
                     "status": "success",
@@ -156,11 +189,9 @@ class AgentOrchestrator:
                     "iterations": iteration
                 }
             else:
-                console.print(f"[red]✘ {best_candidate.id} failed execution sandbox.[/red]")
-                console.print(f"[dim]{execution_result.stderr}[/dim]")
                 console.print("[bold yellow]Execution failed. Repeating loop...[/bold yellow]")
 
-        self.state = OrchestratorState.IDLE
+        self.state = OrchestratorState.STOP
         console.print("[bold red]Task Complete - Failure (Max iterations reached)[/bold red]")
 
         # Write final failure due to timeout/iteration limit

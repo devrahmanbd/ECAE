@@ -95,7 +95,7 @@ def process_task(task: str, workspace_dir: str = ".") -> str:
     try:
         # The orchestrator method is process_task(task_query, workspace_dir)
         result = orchestrator.process_task(task_query=task, workspace_dir=workspace_dir)
-        if result:
+        if result and result.get("status") == "success":
             return f"Task completed successfully: {task}"
         else:
             return f"Task failed: {task}"
