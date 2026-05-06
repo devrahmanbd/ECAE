@@ -10,15 +10,15 @@ def test_orchestrator_execution_order_and_success():
     orchestrator = AgentOrchestrator()
 
     # We mock out execute_command so it passes without trying to pull a docker image
-    import memory_system.services.execution_service as exec_svc
-    original_exec = exec_svc.execute_command
+    import memory_system.agent_engine.orchestrator as orch_module
+    original_exec = orch_module.run_in_docker
 
-    def mock_execute(command: str, workdir: str = ".", timeout: int = 60):
-        cmd = command
+    def mock_execute(image: str, build_command: str, test_command: str, volumes: dict, timeout: int = 60):
+        cmd = test_command
         from memory_system.models.schemas import ExecutionResult
         return ExecutionResult(success=True, stdout="passed mock", stderr="", exit_code=0)
 
-    exec_svc.execute_command = mock_execute
+    orch_module.run_in_docker = mock_execute
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -29,19 +29,19 @@ def test_orchestrator_execution_order_and_success():
             assert result["execution"]["success"] is True
             assert result["iterations"] == 1
     finally:
-        exec_svc.execute_command = original_exec
+        orch_module.run_in_docker = original_exec
 
 def test_orchestrator_failure_recovery_behavior():
     # Set max iterations low to speed up test
     orchestrator = AgentOrchestrator(max_iterations=2)
 
     # We mock out execute_command so it fails every time
-    import memory_system.services.execution_service as exec_svc
-    original_exec = exec_svc.execute_command
+    import memory_system.agent_engine.orchestrator as orch_module
+    original_exec = orch_module.run_in_docker
 
     attempts = 0
-    def mock_execute(command: str, workdir: str = ".", timeout: int = 60):
-        cmd = command
+    def mock_execute(image: str, build_command: str, test_command: str, volumes: dict, timeout: int = 60):
+        cmd = test_command
         nonlocal attempts
         from memory_system.models.schemas import ExecutionResult
         # Only count main test/build phase executions (not setup rm/cp ones)
@@ -49,7 +49,7 @@ def test_orchestrator_failure_recovery_behavior():
             attempts += 1
         return ExecutionResult(success=False, stdout="", stderr="failed mock", exit_code=1)
 
-    exec_svc.execute_command = mock_execute
+    orch_module.run_in_docker = mock_execute
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -61,4 +61,4 @@ def test_orchestrator_failure_recovery_behavior():
             # but fundamentally we verify it looped.
             assert attempts >= 2
     finally:
-        exec_svc.execute_command = original_exec
+        orch_module.run_in_docker = original_exec

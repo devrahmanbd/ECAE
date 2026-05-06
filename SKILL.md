@@ -226,6 +226,7 @@ If a step failed, name the step and the reason.
 * Never claim autonomy if the loop did not actually run.
 * Never pretend the skill is a CLI command.
 * Never mix memory evidence with graph evidence.
+* Never require manual graph.json edits.
 
 ---
 

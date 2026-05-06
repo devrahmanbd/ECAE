@@ -21,12 +21,23 @@ def parse_and_route_ecae_command(command_str: str) -> str:
         return f"Error parsing command: {e}"
 
     if not parts:
-        return "Error: Empty command."
+        # Fallback for empty path handling
+        parts = ["."]
 
     subcommand = parts[0]
 
+    # Handle 'init' subcommand
+    if subcommand == "init":
+        from memory_system.services.workspace_service import init_project
+        path = parts[1] if len(parts) > 1 else "."
+        try:
+            metadata = init_project(path)
+            return f"Project initialized successfully at {metadata['project_root']} with profile {metadata['language_profile']}."
+        except Exception as e:
+            return f"Error initializing project: {e}"
+
     # Handle 'path' subcommand
-    if subcommand == "path":
+    elif subcommand == "path":
         if len(parts) < 3:
             return "Error: Missing nodes for path command. Usage: /ecae path <node_a> <node_b>"
         node_a = parts[1]
@@ -51,6 +62,11 @@ def parse_and_route_ecae_command(command_str: str) -> str:
 
     # Handle the full orchestrator task (e.g., /ecae . --task "Implement X")
     elif subcommand == ".":
+        from memory_system.services.workspace_service import detect_workspace
+
+        # Determine actual workspace path (handles missing path gracefully)
+        workspace_dir = detect_workspace(".")
+
         task = ""
         if "--task" in parts:
             task_idx = parts.index("--task")
@@ -60,12 +76,12 @@ def parse_and_route_ecae_command(command_str: str) -> str:
         if not task:
             return "Error: Missing --task argument."
 
-        return process_task(task)
+        return process_task(task, workspace_dir)
 
     else:
         return f"Error: Unknown command or subcommand: {subcommand}"
 
-def process_task(task: str) -> str:
+def process_task(task: str, workspace_dir: str = ".") -> str:
     """Wrapper to run the orchestrator synchronously."""
     import asyncio
     from memory_system.agent_engine.orchestrator import AgentOrchestrator
@@ -73,13 +89,12 @@ def process_task(task: str) -> str:
 
     # We want to capture the output, or at least run it cleanly.
     # The simplest way is to run the loop and return the result.
-    orchestrator = AgentOrchestrator(workspace_dir=".")
+    orchestrator = AgentOrchestrator()
 
     # Simple synchronous wrapper for the async run loop
     try:
-        # In python 3.10+ we might be able to use asyncio.run
-        # But wait, orchestrator.run() is NOT async in our implementation!
-        result = orchestrator.run(task)
+        # The orchestrator method is process_task(task_query, workspace_dir)
+        result = orchestrator.process_task(task_query=task, workspace_dir=workspace_dir)
         if result:
             return f"Task completed successfully: {task}"
         else:

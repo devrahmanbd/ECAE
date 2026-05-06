@@ -52,3 +52,38 @@ async def test_mcp_call_execute_command():
         assert res_json["stdout"] == "mocked pass"
     finally:
         exec_svc.execute_command = original_exec
+
+@pytest.mark.asyncio
+async def test_mcp_dynamic_workspace_resolution(monkeypatch):
+    import memory_system.services.workspace_service as ws_svc
+
+    # Mock detect_workspace to return a known fake path
+    def mock_detect(path="."):
+        return "/fake/resolved/path"
+
+    monkeypatch.setattr("memory_system.mcp_server.detect_workspace", mock_detect)
+
+    # Mock execute_command to see what volume it gets
+    import memory_system.services.execution_service as exec_svc
+    original_exec = exec_svc.run_in_docker
+
+    passed_volumes = {}
+
+    def mock_run_in_docker(image, build_command, test_command, volumes, timeout=60):
+        nonlocal passed_volumes
+        passed_volumes = volumes
+        from memory_system.models.schemas import ExecutionResult
+        return ExecutionResult(success=True, stdout="mocked", stderr="", exit_code=0)
+
+    monkeypatch.setattr("memory_system.mcp_server.run_in_docker", mock_run_in_docker)
+
+    # Run the tool
+    result = await call_tool("execute_command", {
+        "test_command": "echo test"
+    })
+
+    # Verify the tool correctly used detect_workspace result for mounting
+    import os
+    expected_path = os.path.abspath("/fake/resolved/path")
+    assert expected_path in passed_volumes
+    assert passed_volumes[expected_path] == "/app"

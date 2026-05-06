@@ -128,14 +128,14 @@ Do NOT use raw grep for structural reasoning unless no other option exists
 
 ---
 
-### 10) Stop Conditions
+## Stop Conditions
 
-Stop execution loop if:
-
-* workspace is invalid
-* graph is unavailable
-* memory layer is unreachable
-* execution sandbox is offline
+- No workspace detected → stop
+- Graph unavailable or stale → stop
+- Memory layer unavailable → stop
+- Execution sandbox unavailable → stop
+- Tool call failed or returned malformed output → stop and report the exact layer
+- Never continue with a guessed answer
 
 ---
 
