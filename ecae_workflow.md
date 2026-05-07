@@ -19,133 +19,15 @@ The system MUST automatically detect the workspace root before any other step.
 
 ## Steps
 
-Follow the ECAE execution protocol defined in the core skill system:
+Follow the ECAE execution protocol defined in the core skill system exactly in this deterministic order:
 
-### 1) Workspace Detection
-
-* Identify project root
-* Validate supported project structure
-* Abort if workspace is invalid
-
----
-
-### 2) Graph Initialization / Refresh
-
-* If graph does not exist:
-
-  * build initial graph from workspace
-* If graph exists:
-
-  * refresh incrementally
-
-Graph output location:
-
-```
-graphify-out/graph.json (or ECAE equivalent dynamic graph store)
-```
-
----
-
-### 3) Memory Load
-
-* Load relevant historical memory:
-
-  * prior failures
-  * prior successful fixes
-  * similar tasks
-
-Tooling:
-
-* search_memory
-* get_relevant_memory
-
----
-
-### 4) Predict Phase
-
-* Use graph + memory to generate candidate actions
-* Identify impacted nodes and dependencies
-
-Output:
-
-* candidate plan set
-
----
-
-### 5) Filter Phase
-
-* Remove unsafe or invalid candidates
-* Reject actions violating:
-
-  * dependency constraints
-  * execution policies
-  * workspace rules
-
----
-
-### 6) Optimize Phase
-
-* Rank remaining candidates by:
-
-  * success probability
-  * graph centrality impact
-  * memory similarity to past success
-
----
-
-### 7) Generate Phase
-
-* Produce concrete implementation steps
-* Must be executable in sandbox
-* Must reference real files from graph
-
----
-
-### 8) Execute Phase
-
-* Run in sandbox environment
-* Capture:
-
-  * stdout
-  * stderr
-  * exit code
-
-Tool:
-
-* execute_command
-
----
-
-### 9) Observe Result
-
-* Classify outcome:
-
-  * success
-  * failure
-
----
-
-### 10) Learn Phase
-
-* Store result in memory:
-
-  * success → reinforcement memory
-  * failure → corrective memory
-
-Tool:
-
-* store_memory
-
----
-
-### 11) Loop Decision
-
-* If failure and retries allowed:
-
-  * return to Predict phase
-* If success or stop condition met:
-
-  * terminate workflow
+- detect workspace
+- resolve graph
+- query memory
+- choose candidate
+- execute in sandbox
+- store result
+- repeat or stop
 
 ---
 

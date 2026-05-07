@@ -74,6 +74,7 @@ def test_orchestrator_stop_condition_sandbox(monkeypatch):
 
     orchestrator = AgentOrchestrator()
     with tempfile.TemporaryDirectory() as tmpdir:
+        with open(os.path.join(tmpdir, "requirements.txt"), "w") as f: f.write("pytest\n")
         init_project(tmpdir)
         with open(os.path.join(tmpdir, "main.py"), "w") as f: f.write("def dummy(): pass\n")
         init_project(tmpdir)
@@ -100,6 +101,8 @@ def test_orchestrator_real_loop_execution(monkeypatch):
     monkeypatch.setattr(orch_module, "store_memory", mock_store)
 
     with tempfile.TemporaryDirectory() as tmpdir:
+        with open(os.path.join(tmpdir, "requirements.txt"), "w") as f:
+            f.write("pytest\n")
         with open(os.path.join(tmpdir, "main.py"), "w") as f:
             f.write("def dummy(): pass\n")
 
@@ -137,6 +140,8 @@ def test_orchestrator_real_loop_success(monkeypatch):
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create a passing test file so pytest execution succeeds natively without mocks
+        with open(os.path.join(tmpdir, "requirements.txt"), "w") as f:
+            f.write("pytest\n")
         with open(os.path.join(tmpdir, "test_main.py"), "w") as f:
             f.write("def test_dummy(): assert True\n")
 
@@ -144,8 +149,8 @@ def test_orchestrator_real_loop_success(monkeypatch):
 
         # Mocking the external sandbox barrier so the test can proceed cleanly through the orchestrator success states
         def mock_run_in_docker(*args, **kwargs):
-            from memory_system.models.schemas import ExecutionResult
-            return ExecutionResult(success=True, stdout="passed", stderr="", exit_code=0)
+                from memory_system.models.schemas import ExecutionResult
+                return ExecutionResult(success=True, stdout="passed", stderr="", exit_code=0, profile_used=kwargs.get("profile_used"))
 
         monkeypatch.setattr(orch_module, "run_in_docker", mock_run_in_docker)
 
@@ -159,3 +164,39 @@ def test_orchestrator_real_loop_success(monkeypatch):
         # Should have written success memory once
         assert len(mem_calls) == 1
         assert mem_calls[0]["metadata"].outcome == "success"
+
+        # Verify execution result contains profile_used and is stored in memory tags
+        assert result["execution"]["profile_used"] == "python"
+        assert "profile_used:python" in mem_calls[0]["metadata"].tags
+
+def test_orchestrator_stop_condition_missing_profile(monkeypatch):
+    orchestrator = AgentOrchestrator()
+
+    # Spy on store_memory
+    import memory_system.services.memory_service as mem_svc
+    mem_calls = []
+    original_store = mem_svc.store_memory
+    def mock_store(*args, **kwargs):
+        mem_calls.append(kwargs)
+        return original_store(*args, **kwargs)
+    import memory_system.agent_engine.orchestrator as orch_module
+    monkeypatch.setattr(orch_module, "store_memory", mock_store)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create a workspace file so it passes WORKSPACE_CHECK
+        with open(os.path.join(tmpdir, ".git"), "w") as f: f.write("")
+        # Add a dummy python file so graphify finds a node
+        with open(os.path.join(tmpdir, "main.py"), "w") as f: f.write("def dummy(): pass\n")
+
+        # We do NOT add a profile identifier (no requirements.txt, go.mod, etc.)
+        # so profile resolves to "unknown".
+        init_project(tmpdir)
+
+        result = orchestrator.process_task("main.py", workspace_dir=tmpdir)
+
+        assert result["status"] == "stop"
+        assert result["reason"] == "Missing execution profile"
+        assert orchestrator.state == OrchestratorState.STOP
+        assert len(mem_calls) == 1
+        assert mem_calls[0]["metadata"].outcome == "failure"
+        assert "profile_error" in mem_calls[0]["metadata"].tags

@@ -11,7 +11,7 @@ def test_identical_task_comparison():
     import memory_system.services.execution_service as exec_svc
     original_exec = exec_svc.execute_command
 
-    def mock_execute(command: str, workdir: str = ".", timeout: int = 60):
+    def mock_execute(command: str, workdir: str = ".", timeout: int = 60, profile_used: str = None):
         from memory_system.models.schemas import ExecutionResult
         # Simply intercept all commands and pretend they pass to avoid recursive pytest execution
         # which freezes the test suite when run_demo executes pytest inside the mock workspace sandbox.
@@ -39,7 +39,7 @@ def test_reproducibility():
     import memory_system.services.execution_service as exec_svc
     original_exec = exec_svc.execute_command
 
-    def mock_execute(command: str, workdir: str = ".", timeout: int = 60):
+    def mock_execute(command: str, workdir: str = ".", timeout: int = 60, profile_used: str = None):
         from memory_system.models.schemas import ExecutionResult
         # Complete mock to avoid running real tests or python scripts inside the benchmark sandbox
         return ExecutionResult(success=True, stdout="mocked pass", stderr="", exit_code=0)

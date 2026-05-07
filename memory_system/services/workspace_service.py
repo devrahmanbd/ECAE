@@ -1,6 +1,12 @@
 import os
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from pydantic import BaseModel
+
+class ExecutionProfile(BaseModel):
+    language: str
+    validation_command: str
+    execution_command: str
 
 def detect_workspace(path: str = ".") -> str:
     """
@@ -20,26 +26,31 @@ def detect_workspace(path: str = ".") -> str:
 
     return os.path.abspath(path) # Fallback to the provided path if no markers found
 
-def get_execution_profile(path: str) -> str:
+def get_execution_profile(path: str) -> ExecutionProfile:
     """
-    Return basic execution profile based on found files.
+    Return execution profile based on found files.
     """
     if os.path.exists(os.path.join(path, "requirements.txt")) or os.path.exists(os.path.join(path, "pytest.ini")) or os.path.exists(os.path.join(path, "setup.py")):
-        return "python"
+        return ExecutionProfile(language="python", validation_command="pytest", execution_command="python main.py")
     elif os.path.exists(os.path.join(path, "go.mod")):
-        return "go"
+        return ExecutionProfile(language="go", validation_command="go test ./...", execution_command="go build ./...")
     elif os.path.exists(os.path.join(path, "package.json")):
-        return "js/ts"
-    elif os.path.exists(os.path.join(path, "Cargo.toml")):
-        return "rust"
-    elif any(f.endswith(".sql") for f in os.listdir(path)):
-        return "sql/postgres"
-    elif os.path.exists(os.path.join(path, "docker-compose.yml")) or os.path.exists(os.path.join(path, "redis.conf")):
-        return "redis"
-    elif any(f.endswith(".html") for f in os.listdir(path)):
-        return "html/web"
+        return ExecutionProfile(language="js/ts", validation_command="npm test", execution_command="npm run build")
 
-    return "unknown"
+    elif any(f.endswith(".sql") for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))):
+        return ExecutionProfile(language="sql/postgres", validation_command="migration validation command", execution_command="deterministic SQL validation workflow")
+    elif os.path.exists(os.path.join(path, "redis.conf")):
+        return ExecutionProfile(language="redis", validation_command="redis health check", execution_command="integration verification workflow")
+    elif os.path.exists(os.path.join(path, "docker-compose.yml")):
+        with open(os.path.join(path, "docker-compose.yml"), "r") as f:
+            if "redis" in f.read().lower():
+                return ExecutionProfile(language="redis", validation_command="redis health check", execution_command="integration verification workflow")
+            else:
+                return ExecutionProfile(language="unknown", validation_command="", execution_command="")
+    elif any(f.endswith(".html") for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))):
+        return ExecutionProfile(language="html/web", validation_command="smoke test", execution_command="static verification workflow")
+
+    return ExecutionProfile(language="unknown", validation_command="", execution_command="")
 
 def init_project(path: str = ".") -> Dict[str, Any]:
     """
@@ -59,7 +70,7 @@ def init_project(path: str = ".") -> Dict[str, Any]:
     # 3. Write project metadata
     metadata = {
         "project_root": workspace_root,
-        "language_profile": profile,
+        "language_profile": profile.language,
         "initialized": True
     }
 

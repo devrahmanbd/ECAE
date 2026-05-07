@@ -25,7 +25,7 @@ def test_separated_build_and_test():
     import memory_system.services.execution_service as exec_svc
     original_exec = exec_svc.execute_command
 
-    def mock_execute(command: str, workdir: str = ".", timeout: int = 60):
+    def mock_execute(command: str, workdir: str = ".", timeout: int = 60, profile_used: str = None):
         cmd = command
         from memory_system.models.schemas import ExecutionResult
         if "false" in cmd:

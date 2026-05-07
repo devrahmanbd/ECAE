@@ -59,14 +59,15 @@ If the path is a GitHub URL, clone it first using standard git tooling, then con
 
 ## The real operating order
 
-Always follow this order unless the task clearly does not require one of the steps:
+Always follow this strictly enforced sequence: graph → memory → execution → learn.
+If any layer is missing, execution must stop.
 
 1. **Graph Layer** — understand structure and blast radius.
 2. **Memory Layer** — retrieve similar past decisions, failures, and fixes.
 3. **Plan** — write a short, concrete plan.
 4. **Execution Layer** — run the command or tests in the sandbox.
 5. **Validation** — interpret the result.
-6. **Write-back** — store the outcome in memory.
+6. **Learn** — store the outcome in memory.
 7. **Repeat** — only if the task is still unsolved.
 
 ---
@@ -227,6 +228,15 @@ If a step failed, name the step and the reason.
 * Never pretend the skill is a CLI command.
 * Never mix memory evidence with graph evidence.
 * Never require manual graph.json edits.
+* Graph answers stay structural only.
+* Memory answers stay contextual only.
+* Execution answers stay evidence-based only.
+* No tool call, no claim.
+* No exit code, no success.
+* No workspace detected, no run.
+* Do not mix graph facts with memory facts.
+* Do not guess execution results.
+* Do not weaken orchestrator guarantees.
 
 ---
 

@@ -55,6 +55,7 @@ class ExecutionResult(BaseModel):
     stderr: str
     exit_code: Optional[int] = None
     error: Optional[str] = None
+    profile_used: Optional[str] = None
 
 # Phase 5: Decision Engine Structure
 class CandidatePlan(BaseModel):

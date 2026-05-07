@@ -112,6 +112,8 @@ Do NOT use raw grep for structural reasoning unless no other option exists
 
 ### 8) Tool Use Discipline
 
+* Tool use is MANDATORY before any claims.
+* Allowed rules engine stop states: allow, reject, retry, stop
 * No answer without tool confirmation when tools are available
 * No hallucinated execution results
 * No inferred success/failure without execution output
@@ -146,3 +148,4 @@ ECAE operates as a closed-loop system:
 **Predict → Filter → Optimize → Generate → Execute → Observe → Learn → Repeat**
 
 The graph defines structure, memory defines experience, execution defines truth, and MCP ensures workspace-aware coordination without manual configuration.
+No hard-coded graph.json paths. Do not weaken orchestrator guarantees.

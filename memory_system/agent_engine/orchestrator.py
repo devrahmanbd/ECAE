@@ -1,6 +1,7 @@
 from typing import Dict, Any, List
 import os
 from enum import Enum
+from memory_system.services.workspace_service import get_execution_profile
 from memory_system.models.schemas import GraphContext, MemoryMetadata, CandidatePlan
 from memory_system.services.graph_service import get_graph_context
 from memory_system.services.memory_service import search_memory, store_memory
@@ -127,8 +128,16 @@ class AgentOrchestrator:
             # 6. GENERATE
             self.state = OrchestratorState.GENERATE
             console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Generating concrete execution steps...")
+
+            # Fetch execution profile
+            profile = get_execution_profile(workspace_dir)
+            if profile.language == "unknown":
+                reason = "Missing execution profile"
+                self._record_failure(task_query, reason, ["profile_error"])
+                return {"status": "stop", "reason": reason}
+
             build_command = best_candidate.commands[0] if len(best_candidate.commands) > 0 else ""
-            test_command = "pytest"
+            test_command = profile.validation_command
 
             # 7. EXECUTE
             self.state = OrchestratorState.EXECUTE
@@ -142,7 +151,8 @@ class AgentOrchestrator:
                     build_command=build_command,
                     test_command=test_command,
                     volumes=volumes,
-                    timeout=30
+                    timeout=30,
+                    profile_used=profile.language
                 )
             except Exception:
                 reason = "Execution sandbox unavailable"
@@ -170,7 +180,7 @@ class AgentOrchestrator:
                         memory_type="causal",
                         decision=best_candidate.strategy,
                         outcome=outcome_status,
-                        tags=["execution_feedback"],
+                        tags=["execution_feedback", f"profile_used:{execution_result.profile_used}"],
                         confidence=best_candidate.score
                     )
                 )
