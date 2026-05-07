@@ -91,18 +91,33 @@ def search_memory(
     # query_points already sorts by score natively, but we can explicitly ensure it
     sorted_points = sorted(points, key=lambda x: getattr(x, "score", 0.0), reverse=True)
 
-    for r in sorted_points:
+    for r in points:
         if not hasattr(r, "payload") or not r.payload:
             continue
         meta = r.payload.get("metadata", {})
+        base_score = getattr(r, "score", 0.0)
+
+        # Meta-Learning Reranking Signals
+        outcome_bonus = 0.0
+        confidence_weight = meta.get("confidence", 0.5)
+
+        if meta.get("outcome") == "success":
+            outcome_bonus += 0.2
+
+        # Reranked score calculation
+        final_score = (base_score * 0.7) + (outcome_bonus * 0.2) + (confidence_weight * 0.1)
+
         memories.append(MemoryItem(
             id=str(r.id),
-            score=getattr(r, "score", None),
+            score=final_score,
             text=r.payload.get("text", ""),
             metadata=MemoryMetadata(**meta) if meta else None
         ))
 
-    return memories
+    # Resort by reranked final score
+    memories.sort(key=lambda x: x.score, reverse=True)
+
+    return memories[:limit]
 
 def cleanup_memory(min_confidence: float = 0.5):
     """

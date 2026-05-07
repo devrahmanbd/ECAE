@@ -43,7 +43,8 @@ def get_execution_profile(path: str) -> str:
 
 def init_project(path: str = ".") -> Dict[str, Any]:
     """
-    Initialize the workspace by writing metadata and building the graph.
+    Initialize the workspace by resolving the project and building the graph dynamically in memory.
+    No hardcoded graph.json references or file outputs.
     """
     from memory_system.services.graph_service import ProjectGraph
 
@@ -52,34 +53,16 @@ def init_project(path: str = ".") -> Dict[str, Any]:
     # 1. Determine execution profile
     profile = get_execution_profile(workspace_root)
 
-    # 2. Build graphify output directory
-    graphify_out = os.path.join(workspace_root, "graphify-out")
-    os.makedirs(graphify_out, exist_ok=True)
+    # 2. Build initial graph entirely in memory
+    graph = ProjectGraph(workspace_root)
 
-    # 3. Write project metadata
+    # 3. Return project metadata and graph statistics dynamically
     metadata = {
         "project_root": workspace_root,
         "language_profile": profile,
-        "initialized": True
-    }
-
-    metadata_path = os.path.join(graphify_out, "project.json")
-    with open(metadata_path, "w") as f:
-        json.dump(metadata, f, indent=4)
-
-    # 4. Build initial graph
-    graph = ProjectGraph(workspace_root)
-    # The graph is built automatically in the constructor (__init__ calls build_graph())
-
-    # For now, we serialize the basic structure to show it was built
-    graph_data = {
+        "initialized": True,
         "nodes_count": len(graph.nodes),
-        "edges_count": len(graph.edges),
-        "status": "built"
+        "edges_count": len(graph.edges)
     }
-
-    graph_json_path = os.path.join(graphify_out, "graph.json")
-    with open(graph_json_path, "w") as f:
-        json.dump(graph_data, f, indent=4)
 
     return metadata

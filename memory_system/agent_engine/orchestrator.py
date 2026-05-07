@@ -20,8 +20,9 @@ class OrchestratorState(Enum):
     GENERATE = 7
     EXECUTE = 8
     RESULT = 9
-    LEARN = 10
-    STOP = 11
+    CRITIQUE = 10
+    LEARN = 11
+    STOP = 12
 
 class AgentOrchestrator:
     def __init__(self, max_iterations: int = 3):
@@ -86,7 +87,7 @@ class AgentOrchestrator:
             console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Checking Qdrant for past experiences...")
             try:
                 past_memories = search_memory(task_query)
-            except Exception:
+            except Exception as e:
                 reason = "Memory layer unavailable"
                 self._record_failure(task_query, reason, ["memory_error"])
                 return {"status": "stop", "reason": reason}
@@ -97,7 +98,7 @@ class AgentOrchestrator:
             console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Predicting candidates...")
             try:
                 raw_candidates = self.decision_engine.generate_candidates(task_query, graph_context, past_memories)
-            except Exception:
+            except Exception as e:
                 reason = "Tool call failed or returned malformed output"
                 self._record_failure(task_query, reason, ["tool_error"])
                 return {"status": "stop", "reason": reason}
@@ -114,7 +115,7 @@ class AgentOrchestrator:
                     reason = "No safe candidates found"
                     self._record_failure(task_query, reason, ["filter_rejection"])
                     return {"status": "stop", "reason": reason}
-            except Exception:
+            except Exception as e:
                 reason = "Tool call failed or returned malformed output"
                 self._record_failure(task_query, reason, ["tool_error"])
                 return {"status": "stop", "reason": reason}
@@ -144,7 +145,7 @@ class AgentOrchestrator:
                     volumes=volumes,
                     timeout=30
                 )
-            except Exception:
+            except Exception as e:
                 reason = "Execution sandbox unavailable"
                 self._record_failure(task_query, reason, ["sandbox_error"])
                 return {"status": "stop", "reason": reason}
@@ -159,7 +160,23 @@ class AgentOrchestrator:
                 console.print(f"[red]✘ {best_candidate.id} failed execution sandbox.[/red]")
                 console.print(f"[dim]{execution_result.stderr}[/dim]")
 
-            # 9. LEARN
+            # Pre-condition: No final success without execution proof
+            if execution_result.exit_code is None:
+                console.print("[bold red]FATAL: No execution evidence returned. Blocking success bypass.[/bold red]")
+                reason = "No execution evidence provided"
+                self._record_failure(task_query, reason, ["execution_bypass_blocked"])
+                return {"status": "stop", "reason": reason}
+
+            # 10. CRITIQUE
+            self.state = OrchestratorState.CRITIQUE
+            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Performing self-critique...")
+
+            # Simple heuristic self-critique based on output
+            critique_reason = "Executed successfully without errors." if execution_result.success else "Execution failed during runtime or validation."
+            if not execution_result.success and "timed out" in execution_result.error.lower():
+                critique_reason = "Execution failed due to environment timeout."
+
+            # 11. LEARN
             self.state = OrchestratorState.LEARN
             console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Learning from {outcome_status}...")
 
@@ -171,7 +188,14 @@ class AgentOrchestrator:
                         decision=best_candidate.strategy,
                         outcome=outcome_status,
                         tags=["execution_feedback"],
-                        confidence=best_candidate.score
+                        confidence=best_candidate.score,
+                        task=task_query,
+                        critique=critique_reason,
+                        execution_result_summary=f"Exit: {execution_result.exit_code}, Success: {execution_result.success}, Failed Stage: {execution_result.failing_stage}",
+                        graph_context_summary=f"Blast radius: {graph_context.blast_radius}",
+                        memory_context_summary=f"Memories utilized: {len(past_memories)}",
+                        semantic_labels=[best_candidate.strategy, outcome_status],
+                        relation_labels=[d.entity for d in graph_context.impacted_dependencies] if graph_context.impacted_dependencies else []
                     )
                 )
             except Exception as e:
