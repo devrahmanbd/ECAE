@@ -86,7 +86,7 @@ class AgentOrchestrator:
             console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Checking Qdrant for past experiences...")
             try:
                 past_memories = search_memory(task_query)
-            except Exception:
+            except Exception as e:
                 reason = "Memory layer unavailable"
                 self._record_failure(task_query, reason, ["memory_error"])
                 return {"status": "stop", "reason": reason}
@@ -97,7 +97,7 @@ class AgentOrchestrator:
             console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Predicting candidates...")
             try:
                 raw_candidates = self.decision_engine.generate_candidates(task_query, graph_context, past_memories)
-            except Exception:
+            except Exception as e:
                 reason = "Tool call failed or returned malformed output"
                 self._record_failure(task_query, reason, ["tool_error"])
                 return {"status": "stop", "reason": reason}
@@ -114,7 +114,7 @@ class AgentOrchestrator:
                     reason = "No safe candidates found"
                     self._record_failure(task_query, reason, ["filter_rejection"])
                     return {"status": "stop", "reason": reason}
-            except Exception:
+            except Exception as e:
                 reason = "Tool call failed or returned malformed output"
                 self._record_failure(task_query, reason, ["tool_error"])
                 return {"status": "stop", "reason": reason}
@@ -144,7 +144,7 @@ class AgentOrchestrator:
                     volumes=volumes,
                     timeout=30
                 )
-            except Exception:
+            except Exception as e:
                 reason = "Execution sandbox unavailable"
                 self._record_failure(task_query, reason, ["sandbox_error"])
                 return {"status": "stop", "reason": reason}
