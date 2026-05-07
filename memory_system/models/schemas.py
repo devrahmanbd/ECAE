@@ -11,6 +11,15 @@ class MemoryMetadata(BaseModel):
     affected_files: Optional[List[str]] = None
     confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
 
+    # Phase 6 Meta-Learning Fields
+    task: Optional[str] = None
+    graph_context_summary: Optional[str] = None
+    memory_context_summary: Optional[str] = None
+    execution_result_summary: Optional[str] = None
+    critique: Optional[str] = None
+    semantic_labels: Optional[List[str]] = None
+    relation_labels: Optional[List[str]] = None
+
     # Allow extra fields for backward compatibility / flexibility
     model_config = {"extra": "allow"}
 
@@ -55,6 +64,11 @@ class ExecutionResult(BaseModel):
     stderr: str
     exit_code: Optional[int] = None
     error: Optional[str] = None
+
+    # Phase 6 Crash & Envelope Fields
+    profile_used: Optional[str] = None
+    stack_trace: Optional[str] = None
+    failing_stage: Optional[str] = None
 
 # Phase 5: Decision Engine Structure
 class CandidatePlan(BaseModel):

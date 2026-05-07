@@ -44,24 +44,8 @@ def test_init_project(temp_workspace):
     assert metadata["language_profile"] == "python"
     assert metadata["initialized"] is True
 
-    # Check if graphify-out directory was created
-    graphify_out = temp_workspace / "graphify-out"
-    assert graphify_out.exists()
-    assert graphify_out.is_dir()
-
-    # Check if project.json was created
-    project_json_path = graphify_out / "project.json"
-    assert project_json_path.exists()
-
-    with open(project_json_path, "r") as f:
-        data = json.load(f)
-        assert data["language_profile"] == "python"
-
-    # Check if graph.json was created
-    graph_json_path = graphify_out / "graph.json"
-    assert graph_json_path.exists()
-
-    with open(graph_json_path, "r") as f:
-        graph_data = json.load(f)
-        assert graph_data["status"] == "built"
-        assert "nodes_count" in graph_data
+    # Graph is now built purely dynamically in memory.
+    # Check that metadata returns the dynamic graph structure.
+    assert "nodes_count" in metadata
+    assert "edges_count" in metadata
+    assert metadata["nodes_count"] >= 0
