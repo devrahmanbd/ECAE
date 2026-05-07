@@ -147,7 +147,7 @@ class AgentOrchestrator:
 
             try:
                 execution_result = run_in_docker(
-                    image="python:3.11-slim",
+                    image=profile.docker_image,
                     build_command=build_command,
                     test_command=test_command,
                     volumes=volumes,

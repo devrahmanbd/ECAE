@@ -7,6 +7,7 @@ class ExecutionProfile(BaseModel):
     language: str
     validation_command: str
     execution_command: str
+    docker_image: str = "python:3.11-slim"
 
 def detect_workspace(path: str = ".") -> str:
     """
@@ -33,22 +34,22 @@ def get_execution_profile(path: str) -> ExecutionProfile:
     if os.path.exists(os.path.join(path, "requirements.txt")) or os.path.exists(os.path.join(path, "pytest.ini")) or os.path.exists(os.path.join(path, "setup.py")):
         return ExecutionProfile(language="python", validation_command="pytest", execution_command="python main.py")
     elif os.path.exists(os.path.join(path, "go.mod")):
-        return ExecutionProfile(language="go", validation_command="go test ./...", execution_command="go build ./...")
+        return ExecutionProfile(language="go", validation_command="go test ./...", execution_command="go build ./...", docker_image="golang:1.21-alpine")
     elif os.path.exists(os.path.join(path, "package.json")):
-        return ExecutionProfile(language="js/ts", validation_command="npm test", execution_command="npm run build")
+        return ExecutionProfile(language="js/ts", validation_command="npm test", execution_command="npm run build", docker_image="node:20-alpine")
 
     elif any(f.endswith(".sql") for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))):
-        return ExecutionProfile(language="sql/postgres", validation_command="migration validation command", execution_command="deterministic SQL validation workflow")
+        return ExecutionProfile(language="sql/postgres", validation_command="migration validation command", execution_command="deterministic SQL validation workflow", docker_image="postgres:15-alpine")
     elif os.path.exists(os.path.join(path, "redis.conf")):
-        return ExecutionProfile(language="redis", validation_command="redis health check", execution_command="integration verification workflow")
+        return ExecutionProfile(language="redis", validation_command="redis health check", execution_command="integration verification workflow", docker_image="redis:7-alpine")
     elif os.path.exists(os.path.join(path, "docker-compose.yml")):
         with open(os.path.join(path, "docker-compose.yml"), "r") as f:
             if "redis" in f.read().lower():
-                return ExecutionProfile(language="redis", validation_command="redis health check", execution_command="integration verification workflow")
+                return ExecutionProfile(language="redis", validation_command="redis health check", execution_command="integration verification workflow", docker_image="redis:7-alpine")
             else:
                 return ExecutionProfile(language="unknown", validation_command="", execution_command="")
     elif any(f.endswith(".html") for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))):
-        return ExecutionProfile(language="html/web", validation_command="smoke test", execution_command="static verification workflow")
+        return ExecutionProfile(language="html/web", validation_command="smoke test", execution_command="static verification workflow", docker_image="nginx:alpine")
 
     return ExecutionProfile(language="unknown", validation_command="", execution_command="")
 
