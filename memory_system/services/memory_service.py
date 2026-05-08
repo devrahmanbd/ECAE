@@ -5,7 +5,9 @@ from qdrant_client.http.models import PointStruct, Filter, FieldCondition, Match
 from memory_system.db.qdrant_client import client
 from memory_system.core.config import COLLECTION_NAME
 from memory_system.core.embeddings import embed
-from memory_system.models.schemas import MemoryItem, MemoryMetadata
+from memory_system.models.schemas import MemoryItem, MemoryMetadata, EvidencePacket
+from memory_system.services.graph_service import get_graph_context
+import time
 
 def store_memory(text: str, metadata: Optional[MemoryMetadata] = None, similarity_threshold: float = 0.95) -> Optional[MemoryItem]:
     """Embed text and store in Qdrant, preventing duplicates."""
@@ -28,6 +30,9 @@ def store_memory(text: str, metadata: Optional[MemoryMetadata] = None, similarit
             return None
 
     # Use dict dump if provided, otherwise empty
+    if metadata and metadata.timestamp is None:
+        metadata.timestamp = time.time()
+
     meta_dict = metadata.model_dump(exclude_none=True) if metadata else {}
     payload = {
         "text": text,
@@ -97,17 +102,35 @@ def search_memory(
         meta = r.payload.get("metadata", {})
         base_score = getattr(r, "score", 0.0)
 
-        # Meta-Learning Reranking Signals
+        # Phase 7 Hybrid Ranking Signals
         outcome_bonus = 0.0
-        # safely handle explicit None values alongside missing keys
+        recency_bonus = 0.0
+        critique_bonus = 0.0
+
+        # Safely handle explicit None values
         raw_conf = meta.get("confidence")
         confidence_weight = raw_conf if raw_conf is not None else 0.5
 
-        if meta.get("outcome") == "success":
+        outcome = meta.get("outcome")
+        if outcome == "success":
             outcome_bonus += 0.2
+        elif outcome == "failure":
+            # Failures are valuable to learn from, but slightly less heavily weighted than straight successes
+            outcome_bonus += 0.1
 
-        # Reranked score calculation
-        final_score = (base_score * 0.7) + (outcome_bonus * 0.2) + (confidence_weight * 0.1)
+        # Critique Usefulness (if critique exists and is robust, give it a bump)
+        if meta.get("critique") and len(meta.get("critique")) > 10:
+            critique_bonus += 0.1
+
+        # Recency (newer memories get a small bump)
+        mem_time = meta.get("timestamp")
+        if mem_time:
+            age = time.time() - mem_time
+            if age < 86400: # Less than 1 day old
+                recency_bonus += 0.1
+
+        # Reranked score calculation: Similarity (50%), Outcome (20%), Confidence (10%), Critique (10%), Recency (10%)
+        final_score = (base_score * 0.5) + outcome_bonus + (confidence_weight * 0.1) + critique_bonus + recency_bonus
 
         memories.append(MemoryItem(
             id=str(r.id),
@@ -142,3 +165,46 @@ def cleanup_memory(min_confidence: float = 0.5):
         logger.info("Memory cleanup successful")
     except Exception as e:
         logger.error(f"Memory cleanup failed: {str(e)}")
+
+
+def assemble_evidence(task: str, workspace_dir: str = ".") -> EvidencePacket:
+    """Phase 7: Assemble a rich evidence packet for the LLM."""
+    logger.info(f"Assembling evidence packet for task: {task}")
+
+    # 1. Gather Graph Neighborhood
+    graph_ctx = get_graph_context(task, root_dir=workspace_dir)
+    neighborhood = [d.model_dump() for d in (graph_ctx.impacted_dependencies or [])]
+
+    # 2. Gather Semantic Memories
+    all_memories = search_memory(task, limit=10)
+
+    successes = []
+    failures = []
+    critiques = []
+    traces = []
+
+    for mem in all_memories:
+        meta = mem.metadata
+        if not meta:
+            continue
+
+        outcome = meta.outcome
+        if outcome == "success":
+            successes.append(mem)
+        elif outcome == "failure":
+            failures.append(mem)
+
+        if meta.critique:
+            critiques.append(mem)
+
+        if meta.execution_result_summary:
+            traces.append({"id": mem.id, "summary": meta.execution_result_summary})
+
+    return EvidencePacket(
+        task=task,
+        graph_neighborhood=neighborhood,
+        recent_successes=successes[:3],
+        recent_failures=failures[:3],
+        critique_records=critiques[:3],
+        execution_traces=traces[:3]
+    )

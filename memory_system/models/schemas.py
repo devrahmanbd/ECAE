@@ -20,6 +20,14 @@ class MemoryMetadata(BaseModel):
     semantic_labels: Optional[List[str]] = None
     relation_labels: Optional[List[str]] = None
 
+    # Phase 7 Positive/Negative Learning Fields
+    what_worked: Optional[str] = None
+    what_failed: Optional[str] = None
+    why_failed: Optional[str] = None
+    never_repeat: Optional[str] = None
+    promising_paths: Optional[str] = None
+    timestamp: Optional[float] = None
+
     # Allow extra fields for backward compatibility / flexibility
     model_config = {"extra": "allow"}
 
@@ -78,3 +86,13 @@ class CandidatePlan(BaseModel):
     score: float = 0.0
     safe: bool = True
     rejection_reason: Optional[str] = None
+
+
+# Phase 7: RAG + MCP Evidence Packet
+class EvidencePacket(BaseModel):
+    task: str
+    graph_neighborhood: List[Dict[str, Any]] = []
+    recent_successes: List[MemoryItem] = []
+    recent_failures: List[MemoryItem] = []
+    critique_records: List[MemoryItem] = []
+    execution_traces: List[Dict[str, Any]] = []

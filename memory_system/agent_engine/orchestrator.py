@@ -97,7 +97,9 @@ class AgentOrchestrator:
             self.state = OrchestratorState.PREDICT
             console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Predicting candidates...")
             try:
-                raw_candidates = self.decision_engine.generate_candidates(task_query, graph_context, past_memories)
+                from memory_system.services.memory_service import assemble_evidence
+                evidence = assemble_evidence(task_query, workspace_dir)
+                raw_candidates = self.decision_engine.generate_candidates(task_query, graph_context, evidence)
             except Exception as e:
                 reason = "Tool call failed or returned malformed output"
                 self._record_failure(task_query, reason, ["tool_error"])
@@ -109,7 +111,7 @@ class AgentOrchestrator:
             try:
                 evaluated = []
                 for cand in raw_candidates:
-                    evaluated.append(self.decision_engine.apply_constraints(cand, graph_context, past_memories))
+                    evaluated.append(self.decision_engine.apply_constraints(cand, graph_context, evidence))
                 safe_candidates = [c for c in evaluated if c.safe]
                 if not safe_candidates:
                     reason = "No safe candidates found"
@@ -171,16 +173,22 @@ class AgentOrchestrator:
             self.state = OrchestratorState.CRITIQUE
             console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Performing self-critique...")
 
-            # Simple heuristic self-critique based on output
+            # Heuristic self-critique based on output (Phase 7 partitioning)
             critique_reason = "Executed successfully without errors." if execution_result.success else "Execution failed during runtime or validation."
-            if not execution_result.success and "timed out" in execution_result.error.lower():
+            if not execution_result.success and execution_result.error and "timed out" in execution_result.error.lower():
                 critique_reason = "Execution failed due to environment timeout."
+
+            what_worked = best_candidate.strategy if execution_result.success else None
+            what_failed = best_candidate.strategy if not execution_result.success else None
+            why_failed = execution_result.error if not execution_result.success else None
+            never_repeat = best_candidate.strategy if not execution_result.success and execution_result.exit_code != 0 else None
 
             # 11. LEARN
             self.state = OrchestratorState.LEARN
             console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Learning from {outcome_status}...")
 
             try:
+                import time
                 store_memory(
                     text=f"Outcome for task: {task_query} using strategy: {best_candidate.strategy}",
                     metadata=MemoryMetadata(
@@ -195,7 +203,12 @@ class AgentOrchestrator:
                         graph_context_summary=f"Blast radius: {graph_context.blast_radius}",
                         memory_context_summary=f"Memories utilized: {len(past_memories)}",
                         semantic_labels=[best_candidate.strategy, outcome_status],
-                        relation_labels=[d.entity for d in graph_context.impacted_dependencies] if graph_context.impacted_dependencies else []
+                        relation_labels=[d.entity for d in graph_context.impacted_dependencies] if graph_context.impacted_dependencies else [],
+                        what_worked=what_worked,
+                        what_failed=what_failed,
+                        why_failed=why_failed,
+                        never_repeat=never_repeat,
+                        timestamp=time.time()
                     )
                 )
             except Exception as e:

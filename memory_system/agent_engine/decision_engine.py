@@ -1,11 +1,11 @@
-from typing import List, Dict, Any, Optional
-from memory_system.models.schemas import CandidatePlan, GraphContext, MemoryItem
+from typing import List, Dict, Any, Optional, Union
+from memory_system.models.schemas import CandidatePlan, GraphContext, MemoryItem, EvidencePacket
 
 class DecisionEngine:
     def __init__(self, safety_rules: Optional[List[str]] = None):
         self.safety_rules = safety_rules or ["rm -rf", "mkfs", "dd ", "> /dev/sda"]
 
-    def generate_candidates(self, query: str, context: GraphContext, memories: List[MemoryItem]) -> List[CandidatePlan]:
+    def generate_candidates(self, query: str, context: GraphContext, evidence: Union[List[MemoryItem], EvidencePacket]) -> List[CandidatePlan]:
         """
         Mock generation of multiple candidate solutions.
         In a full system, this would call an LLM.
@@ -41,7 +41,7 @@ class DecisionEngine:
 
         return candidates
 
-    def apply_constraints(self, candidate: CandidatePlan, context: GraphContext, memories: List[MemoryItem]) -> CandidatePlan:
+    def apply_constraints(self, candidate: CandidatePlan, context: GraphContext, evidence: Union[List[MemoryItem], EvidencePacket]) -> CandidatePlan:
         """
         Apply hard constraints and adjust scores.
         """
@@ -62,7 +62,8 @@ class DecisionEngine:
                 candidate.rejection_reason = "High graph risk without cautious strategy"
 
         # 3. Memory Insights Constraint
-        for mem in memories:
+        mem_list = evidence.recent_failures + evidence.recent_successes if isinstance(evidence, EvidencePacket) else evidence
+        for mem in mem_list:
             # If a past memory explicitly marks this strategy as a failure, penalize it
             if mem.metadata and mem.metadata.outcome == "failure":
                 if mem.metadata.decision and mem.metadata.decision in candidate.strategy:
@@ -71,15 +72,15 @@ class DecisionEngine:
 
         return candidate
 
-    def evaluate_and_select(self, query: str, context: GraphContext, memories: List[MemoryItem]) -> Optional[CandidatePlan]:
+    def evaluate_and_select(self, query: str, context: GraphContext, evidence: Union[List[MemoryItem], EvidencePacket]) -> Optional[CandidatePlan]:
         """
         Main decision loop: generate -> score -> constrain -> select.
         """
-        raw_candidates = self.generate_candidates(query, context, memories)
+        raw_candidates = self.generate_candidates(query, context, evidence)
 
         evaluated = []
         for cand in raw_candidates:
-            evaluated.append(self.apply_constraints(cand, context, memories))
+            evaluated.append(self.apply_constraints(cand, context, evidence))
 
         # Filter safe
         safe_candidates = [c for c in evaluated if c.safe]
