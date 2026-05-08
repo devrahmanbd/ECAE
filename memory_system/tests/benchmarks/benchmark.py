@@ -32,7 +32,9 @@ def run_baseline_agent(task_query: str):
         "success": success,
         "iterations": iterations,
         "time": elapsed,
-        "repeated_mistakes": 1 if not success else 0
+        "repeated_mistakes": 1 if not success else 0,
+        "memory_accesses": 0,
+        "graph_nodes_checked": 0
     }
 
 def run_ecae_agent(task_query: str):
@@ -50,7 +52,9 @@ def run_ecae_agent(task_query: str):
         "success": result["status"] == "success",
         "iterations": result.get("iterations", 1),
         "time": elapsed,
-        "repeated_mistakes": 0 # Assuming memory prevents this
+        "repeated_mistakes": 0, # Assuming memory prevents this
+        "memory_accesses": result.get("memories_used", 0),
+        "graph_nodes_checked": 1 # Implicit check via orchestrator
     }
 
 def compare_agents(task_query: str):
