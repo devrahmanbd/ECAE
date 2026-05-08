@@ -99,7 +99,9 @@ def search_memory(
 
         # Meta-Learning Reranking Signals
         outcome_bonus = 0.0
-        confidence_weight = meta.get("confidence", 0.5)
+        # safely handle explicit None values alongside missing keys
+        raw_conf = meta.get("confidence")
+        confidence_weight = raw_conf if raw_conf is not None else 0.5
 
         if meta.get("outcome") == "success":
             outcome_bonus += 0.2
