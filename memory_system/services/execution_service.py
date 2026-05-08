@@ -9,7 +9,15 @@ def execute_command(command: str, workdir: str = ".", timeout: int = 60) -> Exec
     """
     Execute a command in a subprocess.
     """
+    from memory_system.services.policy_service import engine_policy
+
     try:
+        # Phase 8: Runtime Policy Engine evaluation natively blocking dangerous logic
+        if not engine_policy.evaluate_command(command):
+            return ExecutionResult(success=False, stdout="", stderr="", error="Command blocked by runtime policy.")
+
+        timeout = engine_policy.enforce_timeout(timeout)
+
         # Simple security check: prevent cd outside sandbox bounds
         if "cd " in command and not "cd /tmp" in command and not "cd /app" in command:
             return ExecutionResult(success=False, stdout="", stderr="", error="cd command is forbidden. Use workdir parameter instead.")

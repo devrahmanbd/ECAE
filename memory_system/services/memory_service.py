@@ -5,7 +5,7 @@ from qdrant_client.http.models import PointStruct, Filter, FieldCondition, Match
 from memory_system.db.qdrant_client import client
 from memory_system.core.config import COLLECTION_NAME
 from memory_system.core.embeddings import embed
-from memory_system.models.schemas import MemoryItem, MemoryMetadata, EvidencePacket
+from memory_system.models.schemas import MemoryItem, MemoryMetadata, EvidencePacket, SkillRecord, CausalRecord, ToolchainRecord
 from memory_system.services.graph_service import get_graph_context
 import time
 
@@ -144,12 +144,26 @@ def search_memory(
             if age < 86400: # Less than 1 day old
                 recency_bonus += 0.1
 
-        # Fast learning: Degrade stale low-confidence inputs
-        if confidence_weight < 0.4 and (not mem_time or (time.time() - mem_time) > 86400 * 7):
-            failure_penalty -= 0.1
+        # Fast learning & Phase 8 Temporal Decay
+        drift_score = 0.0
+        decay_score = 0.0
+
+        if mem_time:
+            age_days = (time.time() - mem_time) / 86400
+
+            # Penalize completely stale entries (>30 days) heavily
+            if age_days > 30:
+                decay_score -= 0.3
+            # Low confidence memories decay faster
+            if confidence_weight < 0.4 and age_days > 7:
+                decay_score -= 0.2
+
+            # If critique indicates environment changed, score drift
+            if meta.get("critique") and "timeout" in meta.get("critique", "").lower():
+                drift_score -= 0.1
 
         # Reranked score calculation mapping adaptive learning weights
-        final_score = (base_score * 0.4) + outcome_bonus + (confidence_weight * 0.1) + critique_bonus + recency_bonus + context_bonus + failure_penalty
+        final_score = (base_score * 0.4) + outcome_bonus + (confidence_weight * 0.1) + critique_bonus + recency_bonus + context_bonus + failure_penalty + decay_score + drift_score
 
         memories.append(MemoryItem(
             id=str(r.id),
@@ -228,11 +242,120 @@ def assemble_evidence(task: str, workspace_dir: str = ".") -> EvidencePacket:
                 "profile": getattr(meta, "execution_profile", "unknown")
             })
 
+    from memory_system.models.schemas import CompressedEvidence
+
+    # Phase 8: Compress Evidence
+    known_good = []
+    known_fails = []
+    unsafe = []
+
+    for s in successes:
+        if s.metadata and s.metadata.what_worked and s.metadata.what_worked not in known_good:
+            known_good.append(s.metadata.what_worked)
+
+    for f in failures:
+        if f.metadata:
+            if f.metadata.what_failed and f.metadata.what_failed not in known_fails:
+                known_fails.append(f.metadata.what_failed)
+            if f.metadata.never_repeat and f.metadata.never_repeat not in unsafe:
+                unsafe.append(f.metadata.never_repeat)
+
+    compressed = CompressedEvidence(
+        known_good_patterns=known_good[:5],
+        known_failure_patterns=known_fails[:5],
+        high_confidence_paths=known_good[:2],
+        unsafe_paths=unsafe[:5],
+        unresolved_questions=[],
+        summary_confidence=0.8 if known_good else 0.4,
+        source_bundle_ids=[m.id for m in successes + failures]
+    )
+
     return EvidencePacket(
         task=task,
         graph_neighborhood=neighborhood,
-        recent_successes=successes[:5],
-        recent_failures=failures[:5],
-        critique_records=critiques[:5],
-        execution_traces=traces[:5]
+        recent_successes=successes[:3], # Distilled context bounds
+        recent_failures=failures[:3],
+        critique_records=critiques[:3],
+        execution_traces=traces[:3]
     )
+
+def extract_skills_and_causal(episode_data: Dict[str, Any], task: str) -> None:
+    """Phase 8: Extract reusable skills and causal records from successfully completed episodes."""
+    if not episode_data.get("success"):
+        # Extract Causal Failure Path
+        causal = CausalRecord(
+            action=episode_data.get("selected_strategy", "unknown"),
+            outcome="failure",
+            condition=episode_data.get("workspace", "unknown"),
+            likely_cause=episode_data.get("critique", {}).get("why_failed", "unknown"),
+            confidence=episode_data.get("confidence", 0.5),
+            first_seen=episode_data.get("timestamp", time.time()),
+            last_seen=episode_data.get("timestamp", time.time()),
+            source_episodes=[task]
+        )
+
+        # Store causal as semantic causal memory
+        store_memory(
+            text=f"CAUSAL FAILURE: {causal.action} resulted in {causal.outcome} because {causal.likely_cause}",
+            metadata=MemoryMetadata(
+                memory_type="causal",
+                is_causal=True,
+                causal_data=causal.model_dump(),
+                tags=["causal", "failure_pattern"],
+                timestamp=causal.last_seen
+            )
+        )
+    else:
+        # Extract Successful Skill
+        skill = SkillRecord(
+            skill_id=str(uuid.uuid4()),
+            name=f"Skill extracted from {task}",
+            task_type="resolved_task",
+            description=episode_data.get("selected_strategy", "unknown"),
+            confidence=episode_data.get("confidence", 0.5),
+            last_verified_at=episode_data.get("timestamp", time.time()),
+            usage_count=1,
+            source_episodes=[task]
+        )
+
+        # Store skill as semantic skill memory
+        store_memory(
+            text=f"SKILL SUCCESS: {skill.description} resolves {task}",
+            metadata=MemoryMetadata(
+                memory_type="semantic",
+                is_skill=True,
+                skill_data=skill.model_dump(),
+                tags=["skill", "success_pattern"],
+                timestamp=skill.last_verified_at,
+                created_at=time.time(),
+                last_used_at=time.time()
+            )
+        )
+
+        # Phase 8: Extract Autonomous Toolchain Synthesis
+        # Standard workflow sequence mapped into a reusable synthesis chain
+        toolchain = ToolchainRecord(
+            chain_id=str(uuid.uuid4()),
+            task_type="resolved_task_toolchain",
+            steps=["detect_workspace", "get_graph_context", "search_memory", "assemble_evidence", "execute_command"],
+            success_rate=1.0,
+            failure_patterns=[],
+            prerequisites=[task],
+            linked_skills=[skill.skill_id],
+            linked_episodes=[task],
+            verification_status="verified_success"
+        )
+
+        # Store toolchain as semantic toolchain memory
+        store_memory(
+            text=f"TOOLCHAIN SYNTHESIS: Standard loop mapped to resolve {task}",
+            metadata=MemoryMetadata(
+                memory_type="semantic",
+                is_toolchain=True,
+                toolchain_data=toolchain.model_dump(),
+                tags=["toolchain", "success_pattern"],
+                timestamp=time.time(),
+                created_at=time.time(),
+                last_used_at=time.time()
+            )
+        )

@@ -90,3 +90,130 @@ def test_episode_extraction_and_storage(monkeypatch):
         assert meta.episode_data["execution_outcome"] == "failure"
         assert meta.what_worked is None
         assert meta.what_failed is not None
+
+def test_skill_extraction_and_causal_learning():
+    """Verify Phase 8 extract_skills_and_causal creates records during learning states natively."""
+    from memory_system.services.memory_service import extract_skills_and_causal
+
+    success_episode = {
+        "success": True,
+        "selected_strategy": "Refactored the variable natively",
+        "confidence": 0.9,
+        "timestamp": 12345.6
+    }
+
+    # Store directly calling the extraction logic (usually fired implicitly during LEARN)
+    # We use search_memory to grab it since it outputs explicitly tagged records
+    extract_skills_and_causal(success_episode, "skill extraction validation")
+    results = search_memory("SKILL SUCCESS: Refactored the variable natively resolves skill extraction validation", limit=10)
+    my_results = [r for r in results if r.metadata and r.metadata.is_skill]
+    assert len(my_results) >= 1
+    assert my_results[0].metadata.is_skill is True
+
+    failure_episode = {
+        "success": False,
+        "selected_strategy": "Ran rm -rf",
+        "critique": {"why_failed": "Permission denied"},
+        "confidence": 0.2,
+        "timestamp": 12345.6,
+        "workspace": "/tmp/dummy"
+    }
+
+    extract_skills_and_causal(failure_episode, "causal learning validation")
+    f_results = search_memory("CAUSAL FAILURE: Ran rm -rf resulted in failure because Permission denied", limit=10)
+    my_results_c = [r for r in f_results if r.metadata and r.metadata.is_causal]
+    assert len(my_results_c) >= 1
+    assert my_results_c[0].metadata.is_causal is True
+
+def test_evidence_compression():
+    """Verify assemble_evidence dynamically compresses outputs mapping array limits securely."""
+    from memory_system.services.memory_service import assemble_evidence
+
+    # We already have diverse test cases inserted, assembling an arbitrary large bucket natively
+    res = assemble_evidence("Database index error", ".")
+    assert hasattr(res, "recent_successes")
+
+    # Check that lengths are strictly bounds checked ensuring compressed limits (usually bounded to 3 or 5)
+    assert len(res.recent_successes) <= 5
+
+def test_temporal_decay():
+    """Verify older low confidence memories get degraded score bounds compared to recent ones."""
+    from memory_system.services.memory_service import store_memory, search_memory
+    import time
+
+    # Store memory from years ago
+    past_time = time.time() - (86400 * 40) # 40 days ago
+
+    store_memory("Completely unique old decayed memory", MemoryMetadata(confidence=0.3, timestamp=past_time, outcome="failure"))
+    store_memory("Completely unique recent successful memory", MemoryMetadata(confidence=0.9, timestamp=time.time(), outcome="success"))
+
+    results = search_memory("Completely unique", limit=20)
+    my_res = [r for r in results if "Completely unique" in r.text]
+    assert len(my_res) >= 2
+
+    # The recent success should significantly outrank the older decayed failure
+    assert my_res[0].metadata.outcome == "success"
+
+def test_adaptive_planning():
+    """Verify Decision Engine correctly applies penalties limiting compressed boundaries matching unsafe patterns natively."""
+    from memory_system.agent_engine.decision_engine import DecisionEngine
+    from memory_system.models.schemas import CompressedEvidence, EvidencePacket, CandidatePlan, GraphContext, MemoryItem, MemoryMetadata
+
+    engine = DecisionEngine()
+    # Mock the generator to have a stable string without id(self) for this test
+    engine.generate_candidates = lambda q, c, e: [CandidatePlan(id="cand_1", strategy="Standard bug fix based on memory patterns for testing.", commands=["echo fixing"], score=0.7)]
+
+
+    # Provide an evidence packet indicating candidate 1 is unsafe
+    # Memory logic mapping:
+    # "Standard bug fix based on memory patterns." is candidate 1.
+    evidence = EvidencePacket(
+        task="Testing adaptive mapping",
+        recent_failures=[MemoryItem(id="1", text="fail", metadata=MemoryMetadata(outcome="failure", decision="Standard bug fix based on memory patterns for testing.", never_repeat="Standard bug fix based on memory patterns for testing."))]
+    )
+
+    ctx = GraphContext(query="testing", blast_radius=0)
+
+    best = engine.evaluate_and_select("testing", ctx, evidence)
+
+    # Cand 2 is intrinsically unsafe from base rules
+    # Cand 1 should be explicitly rejected based on the evidence matching known failures
+    # Cand 3 only fires on high blast_radius
+    # Thus, engine should return None effectively gracefully refusing action rather than executing failure
+    assert best is None
+
+def test_policy_engine():
+    """Verify global runtime policies intercept blocked paths completely."""
+    from memory_system.services.policy_service import engine_policy
+    from memory_system.services.execution_service import execute_command
+
+    # Evaluate a string matching forbidden lists natively
+    assert engine_policy.evaluate_command("echo test && rm -rf /") is False
+
+    # Confirm timeout limits securely clamp inputs securely natively
+    assert engine_policy.enforce_timeout(9000) == 120
+
+    # Confirm it actively halts execution_service calls directly
+    res = execute_command("echo test && mkfs /dev/sda1")
+    assert res.success is False
+    assert "Command blocked by runtime policy." in res.error
+
+def test_toolchain_synthesis():
+    """Verify toolchain records extract dynamically during success learning."""
+    from memory_system.services.memory_service import extract_skills_and_causal, search_memory
+
+    success_episode = {
+        "success": True,
+        "selected_strategy": "Resolved memory testing logic",
+        "confidence": 0.9,
+        "timestamp": 12345.6
+    }
+
+    extract_skills_and_causal(success_episode, "toolchain extraction mapping")
+    results = search_memory("TOOLCHAIN SYNTHESIS: Standard loop mapped to resolve toolchain extraction mapping", limit=10)
+    my_results = [r for r in results if r.metadata and r.metadata.is_toolchain]
+
+    assert len(my_results) >= 1
+    assert my_results[0].metadata.is_toolchain is True
+    assert my_results[0].metadata.toolchain_data is not None
+    assert "detect_workspace" in my_results[0].metadata.toolchain_data["steps"]

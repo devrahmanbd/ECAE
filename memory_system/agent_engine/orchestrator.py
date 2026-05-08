@@ -240,6 +240,11 @@ class AgentOrchestrator:
 
             try:
                 import time
+                from memory_system.services.memory_service import extract_skills_and_causal
+
+                # Phase 8: Fire background extractions
+                extract_skills_and_causal(episode.model_dump(), task_query)
+
                 store_memory(
                     text=f"Outcome for task: {task_query} using strategy: {best_candidate.strategy}",
                     metadata=MemoryMetadata(

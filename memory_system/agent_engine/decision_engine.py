@@ -16,7 +16,7 @@ class DecisionEngine:
         # Candidate 1: standard fix
         candidates.append(CandidatePlan(
             id="cand_1",
-            strategy="Standard bug fix based on memory patterns.",
+            strategy=f"Standard bug fix based on memory patterns for {query} {id(self)}.",
             commands=[f"echo 'fixing {query}'"],
             score=0.7
         ))
@@ -69,6 +69,20 @@ class DecisionEngine:
                 if mem.metadata.decision and mem.metadata.decision in candidate.strategy:
                     candidate.score *= 0.1
                     candidate.rejection_reason = "Past memory indicates strategy failure"
+
+            # Phase 8 Adaptive Planning (Promote successful patterns natively)
+            if mem.metadata and mem.metadata.outcome == "success":
+                if mem.metadata.what_worked and mem.metadata.what_worked in candidate.strategy:
+                    candidate.score += 0.15 # Bump safe paths directly
+
+        # Apply strict suppression for unsafe compressed evidence paths
+        if isinstance(evidence, EvidencePacket):
+            for f_mem in evidence.recent_failures:
+                if f_mem.metadata and f_mem.metadata.never_repeat and f_mem.metadata.never_repeat in candidate.strategy:
+                    candidate.safe = False
+                    candidate.score = 0.0
+                    candidate.rejection_reason = "Matches strict known failure pattern"
+                    break
 
         return candidate
 
