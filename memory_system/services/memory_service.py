@@ -144,8 +144,8 @@ def search_memory(
             if age < 86400: # Less than 1 day old
                 recency_bonus += 0.1
 
-        # Fast learning & Phase 8 Temporal Decay
-        drift_score = 0.0
+        # Fast learning & Phase 8/9 Temporal Decay and RL Rewards
+        drift_score = meta.get("drift_penalty", 0.0)
         decay_score = 0.0
 
         if mem_time:
@@ -158,12 +158,29 @@ def search_memory(
             if confidence_weight < 0.4 and age_days > 7:
                 decay_score -= 0.2
 
-            # If critique indicates environment changed, score drift
+            # Phase 9: Active Drift detection
             if meta.get("critique") and "timeout" in meta.get("critique", "").lower():
                 drift_score -= 0.1
 
+        # Phase 9 RL Scoring
+        reward_score = meta.get("reward_score", 0.0)
+        penalty_score = meta.get("penalty_score", 0.0)
+
+        if meta.get("critique") and len(meta.get("critique")) > 20:
+            reward_score += 0.1 # Useful critique reward
+
+        if meta.get("is_skill"):
+            reward_score += 0.2 # Skill reuse reward
+
+        if retries and retries >= 3:
+            penalty_score -= 0.2 # Exhaustion penalty
+
+        workspace_match = 0.0
+        if meta.get("workspace"):
+            workspace_match = 0.05
+
         # Reranked score calculation mapping adaptive learning weights
-        final_score = (base_score * 0.4) + outcome_bonus + (confidence_weight * 0.1) + critique_bonus + recency_bonus + context_bonus + failure_penalty + decay_score + drift_score
+        final_score = (base_score * 0.4) + outcome_bonus + (confidence_weight * 0.1) + critique_bonus + recency_bonus + context_bonus + failure_penalty + decay_score + drift_score + reward_score + penalty_score + workspace_match
 
         memories.append(MemoryItem(
             id=str(r.id),
@@ -279,6 +296,27 @@ def assemble_evidence(task: str, workspace_dir: str = ".") -> EvidencePacket:
         execution_traces=traces[:3]
     )
 
+
+def evaluate_skill_lifecycle(skill: SkillRecord) -> SkillRecord:
+    """Phase 9: Promote or retire skills based on usage counts and drift."""
+    import time
+
+    # Promotion check
+    if skill.usage_count >= 3 and not skill.promoted_at:
+        skill.promoted_at = time.time()
+        skill.promotion_reason = "Repeated successful execution validations."
+        skill.confidence = min(skill.confidence + 0.1, 1.0)
+
+    # Demotion/Retirement check based on a mock drift rule (simulating a contradicted rule threshold)
+    # If confidence drops massively or it hasn't been verified in 60 days
+    if skill.last_verified_at and (time.time() - skill.last_verified_at) > (86400 * 60):
+        if not skill.retired_at:
+            skill.retired_at = time.time()
+            skill.retirement_reason = "Stale skill; unverified for over 60 days."
+            skill.confidence = max(skill.confidence - 0.5, 0.0)
+
+    return skill
+
 def extract_skills_and_causal(episode_data: Dict[str, Any], task: str) -> None:
     """Phase 8: Extract reusable skills and causal records from successfully completed episodes."""
     if not episode_data.get("success"):
@@ -306,17 +344,33 @@ def extract_skills_and_causal(episode_data: Dict[str, Any], task: str) -> None:
             )
         )
     else:
-        # Extract Successful Skill
-        skill = SkillRecord(
-            skill_id=str(uuid.uuid4()),
-            name=f"Skill extracted from {task}",
-            task_type="resolved_task",
-            description=episode_data.get("selected_strategy", "unknown"),
-            confidence=episode_data.get("confidence", 0.5),
-            last_verified_at=episode_data.get("timestamp", time.time()),
-            usage_count=1,
-            source_episodes=[task]
-        )
+        strategy_desc = episode_data.get("selected_strategy", "unknown")
+
+        # Check if skill exists
+        existing_skills = search_memory(f"SKILL SUCCESS: {strategy_desc}", limit=5)
+        existing_skill_item = next((r for r in existing_skills if r.metadata and r.metadata.is_skill and r.metadata.skill_data and r.metadata.skill_data.get("description") == strategy_desc), None)
+
+        if existing_skill_item and existing_skill_item.metadata and existing_skill_item.metadata.skill_data:
+            skill = SkillRecord(**existing_skill_item.metadata.skill_data)
+            skill.usage_count += 1
+            skill.last_verified_at = episode_data.get("timestamp", time.time())
+            if task not in skill.source_episodes:
+                skill.source_episodes.append(task)
+        else:
+            # Extract Successful Skill natively
+            skill = SkillRecord(
+                skill_id=str(uuid.uuid4()),
+                name=f"Skill extracted from {task}",
+                task_type="resolved_task",
+                description=strategy_desc,
+                confidence=episode_data.get("confidence", 0.5),
+                last_verified_at=episode_data.get("timestamp", time.time()),
+                usage_count=1,
+                source_episodes=[task]
+            )
+
+        # Phase 9: Evaluate skill constraints securely
+        skill = evaluate_skill_lifecycle(skill)
 
         # Store skill as semantic skill memory
         store_memory(

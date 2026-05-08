@@ -52,6 +52,23 @@ class MemoryMetadata(BaseModel):
     freshness_score: Optional[float] = 1.0
     drift_score: Optional[float] = 0.0
 
+    # Phase 9 Reward/Drift/Governance Fields
+    reward_score: Optional[float] = 0.0
+    penalty_score: Optional[float] = 0.0
+    outcome_quality: Optional[str] = None
+    recurrence_penalty: Optional[float] = 0.0
+    critique_reward: Optional[float] = 0.0
+    skill_reuse_reward: Optional[float] = 0.0
+    drift_penalty: Optional[float] = 0.0
+    freshness_reward: Optional[float] = 0.0
+    workspace_match_reward: Optional[float] = 0.0
+    drift_reason: Optional[str] = None
+    drift_source: Optional[str] = None
+    last_verified_at: Optional[float] = None
+    last_seen_at: Optional[float] = None
+    confidence_after_drift: Optional[float] = None
+    invalidation_reason: Optional[str] = None
+
     # Allow extra fields for backward compatibility / flexibility
     model_config = {"extra": "allow"}
 
@@ -171,6 +188,12 @@ class SkillRecord(BaseModel):
     last_verified_at: float
     usage_count: int = 0
 
+    # Phase 9 Skill Lifecycle
+    promoted_at: Optional[float] = None
+    retired_at: Optional[float] = None
+    promotion_reason: Optional[str] = None
+    retirement_reason: Optional[str] = None
+
 class CausalRecord(BaseModel):
     action: str
     outcome: str
@@ -203,3 +226,13 @@ class CompressedEvidence(BaseModel):
     unresolved_questions: List[str] = []
     summary_confidence: float = 0.0
     source_bundle_ids: List[str] = []
+
+
+class ReleaseGateReport(BaseModel):
+    status: str # "PASS" or "FAIL"
+    reasons: List[str] = []
+    failed_checks: List[str] = []
+    metrics_summary: Dict[str, Any] = {}
+    drift_summary: Dict[str, Any] = {}
+    skill_summary: Dict[str, Any] = {}
+    stability_summary: Dict[str, Any] = {}
