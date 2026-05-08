@@ -28,6 +28,13 @@ class MemoryMetadata(BaseModel):
     promising_paths: Optional[str] = None
     timestamp: Optional[float] = None
 
+    # Phase 8 Enhanced Episode Fields
+    episode_data: Optional[Dict[str, Any]] = None
+    critique_data: Optional[Dict[str, Any]] = None
+    workspace: Optional[str] = None
+    execution_profile: Optional[str] = None
+    retries: Optional[int] = 0
+
     # Allow extra fields for backward compatibility / flexibility
     model_config = {"extra": "allow"}
 
@@ -96,3 +103,36 @@ class EvidencePacket(BaseModel):
     recent_failures: List[MemoryItem] = []
     critique_records: List[MemoryItem] = []
     execution_traces: List[Dict[str, Any]] = []
+
+# Phase 8: RAG Episode and Critique Records
+class CritiqueRecord(BaseModel):
+    what_worked: Optional[str] = None
+    what_failed: Optional[str] = None
+    why_failed: Optional[str] = None
+    retry_recommendation: Optional[str] = None
+    confidence_explanation: Optional[str] = None
+    dangerous_paths: Optional[str] = None
+    promising_partial_paths: Optional[str] = None
+    execution_anomalies: Optional[str] = None
+    graph_blind_spots: Optional[str] = None
+    memory_blind_spots: Optional[str] = None
+
+class EpisodeRecord(BaseModel):
+    task: str
+    workspace: str
+    selected_strategy: str
+    graph_neighborhood_used: List[Dict[str, Any]] = []
+    evidence_packet_summary: Optional[str] = None
+    memories_retrieved: List[str] = []
+    tools_used: List[str] = []
+    execution_profile: str
+    execution_outcome: str
+    retries_attempted: int
+    crash_envelope: Optional[Dict[str, Any]] = None
+    critique: CritiqueRecord
+    confidence: float
+    success: bool
+    semantic_tags: List[str] = []
+    relation_tags: List[str] = []
+    affected_files: List[str] = []
+    timestamp: float

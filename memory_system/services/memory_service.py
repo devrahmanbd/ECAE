@@ -102,25 +102,40 @@ def search_memory(
         meta = r.payload.get("metadata", {})
         base_score = getattr(r, "score", 0.0)
 
-        # Phase 7 Hybrid Ranking Signals
+        # Phase 8 Adaptive Hybrid Ranking Signals
         outcome_bonus = 0.0
         recency_bonus = 0.0
         critique_bonus = 0.0
+        context_bonus = 0.0
+        failure_penalty = 0.0
 
         # Safely handle explicit None values
         raw_conf = meta.get("confidence")
         confidence_weight = raw_conf if raw_conf is not None else 0.5
 
         outcome = meta.get("outcome")
+        retries = meta.get("retries", 0)
+
         if outcome == "success":
-            outcome_bonus += 0.2
+            outcome_bonus += 0.25
         elif outcome == "failure":
-            # Failures are valuable to learn from, but slightly less heavily weighted than straight successes
             outcome_bonus += 0.1
 
+            # Penalize recurrent failures and exhaustion
+            if retries and retries >= 3:
+                failure_penalty -= 0.15
+
         # Critique Usefulness (if critique exists and is robust, give it a bump)
-        if meta.get("critique") and len(meta.get("critique")) > 10:
+        if meta.get("critique_data"):
+            critique_bonus += 0.15
+        elif meta.get("critique") and len(meta.get("critique")) > 10:
             critique_bonus += 0.1
+
+        # Contextual Matching (if workspace or profiles match, prioritize relevance)
+        # Note: In a full scale search we would pass these as query params, but here we boost generally
+        # based on completeness of metadata fields.
+        if meta.get("execution_profile") or meta.get("workspace"):
+            context_bonus += 0.05
 
         # Recency (newer memories get a small bump)
         mem_time = meta.get("timestamp")
@@ -129,8 +144,12 @@ def search_memory(
             if age < 86400: # Less than 1 day old
                 recency_bonus += 0.1
 
-        # Reranked score calculation: Similarity (50%), Outcome (20%), Confidence (10%), Critique (10%), Recency (10%)
-        final_score = (base_score * 0.5) + outcome_bonus + (confidence_weight * 0.1) + critique_bonus + recency_bonus
+        # Fast learning: Degrade stale low-confidence inputs
+        if confidence_weight < 0.4 and (not mem_time or (time.time() - mem_time) > 86400 * 7):
+            failure_penalty -= 0.1
+
+        # Reranked score calculation mapping adaptive learning weights
+        final_score = (base_score * 0.4) + outcome_bonus + (confidence_weight * 0.1) + critique_bonus + recency_bonus + context_bonus + failure_penalty
 
         memories.append(MemoryItem(
             id=str(r.id),
@@ -168,15 +187,15 @@ def cleanup_memory(min_confidence: float = 0.5):
 
 
 def assemble_evidence(task: str, workspace_dir: str = ".") -> EvidencePacket:
-    """Phase 7: Assemble a rich evidence packet for the LLM."""
+    """Phase 8: Assemble a rich evidence packet for the LLM deeply integrating operational traces."""
     logger.info(f"Assembling evidence packet for task: {task}")
 
     # 1. Gather Graph Neighborhood
     graph_ctx = get_graph_context(task, root_dir=workspace_dir)
     neighborhood = [d.model_dump() for d in (graph_ctx.impacted_dependencies or [])]
 
-    # 2. Gather Semantic Memories
-    all_memories = search_memory(task, limit=10)
+    # 2. Gather Semantic Memories (Deeper Fetch)
+    all_memories = search_memory(task, limit=15)
 
     successes = []
     failures = []
@@ -188,23 +207,32 @@ def assemble_evidence(task: str, workspace_dir: str = ".") -> EvidencePacket:
         if not meta:
             continue
 
-        outcome = meta.outcome
+        # Parse Episode Record if available natively (Phase 8 priority)
+        if hasattr(meta, "episode_data") and meta.episode_data:
+            outcome = meta.episode_data.get("execution_outcome", meta.outcome)
+        else:
+            outcome = meta.outcome
+
         if outcome == "success":
             successes.append(mem)
         elif outcome == "failure":
             failures.append(mem)
 
-        if meta.critique:
+        if getattr(meta, "critique_data", None) or meta.critique:
             critiques.append(mem)
 
         if meta.execution_result_summary:
-            traces.append({"id": mem.id, "summary": meta.execution_result_summary})
+            traces.append({
+                "id": mem.id,
+                "summary": meta.execution_result_summary,
+                "profile": getattr(meta, "execution_profile", "unknown")
+            })
 
     return EvidencePacket(
         task=task,
         graph_neighborhood=neighborhood,
-        recent_successes=successes[:3],
-        recent_failures=failures[:3],
-        critique_records=critiques[:3],
-        execution_traces=traces[:3]
+        recent_successes=successes[:5],
+        recent_failures=failures[:5],
+        critique_records=critiques[:5],
+        execution_traces=traces[:5]
     )

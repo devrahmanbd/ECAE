@@ -61,6 +61,25 @@ async def list_tools() -> list[types.Tool]:
             }
         ),
         types.Tool(
+            name="resolve_workspace",
+            description="Phase 8 Tool: Resolve the dynamic workspace path based on repository root configurations.",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            }
+        ),
+        types.Tool(
+            name="retrieve_episodes",
+            description="Phase 8 Tool: Retrieve targeted historical episode records for deeper reasoning constraints.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The target task to find episodes for"}
+                },
+                "required": ["query"]
+            }
+        ),
+        types.Tool(
             name="get_graph_context",
             description="Retrieve structural dependency graph and blast radius. MUST be called second.",
             inputSchema={
@@ -149,6 +168,16 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             resolved_root = detect_workspace(".")
             evidence = assemble_evidence(arguments["task"], workspace_dir=resolved_root)
             return [types.TextContent(type="text", text=evidence.model_dump_json())]
+
+        elif name == "resolve_workspace":
+            resolved_root = detect_workspace(".")
+            return [types.TextContent(type="text", text=resolved_root)]
+
+        elif name == "retrieve_episodes":
+            # Native retrieval of exclusively parsed episode records utilizing our semantic filter
+            results = search_memory(arguments["query"], limit=10)
+            episodes = [r.metadata.episode_data for r in results if r.metadata and hasattr(r.metadata, "episode_data") and r.metadata.episode_data]
+            return [types.TextContent(type="text", text=json.dumps(episodes))]
 
         elif name == "get_graph_context":
             resolved_root = detect_workspace(arguments.get("root_dir", "."))

@@ -99,6 +99,11 @@ class AgentOrchestrator:
             try:
                 from memory_system.services.memory_service import assemble_evidence
                 evidence = assemble_evidence(task_query, workspace_dir)
+
+                # Phase 8: Loop Enforcement Barrier - Block progression on missing evidence payload constraints natively
+                if not evidence or not hasattr(evidence, "task"):
+                    raise Exception("Evidence packet corrupted or missing")
+
                 raw_candidates = self.decision_engine.generate_candidates(task_query, graph_context, evidence)
             except Exception as e:
                 reason = "Tool call failed or returned malformed output"
@@ -173,15 +178,61 @@ class AgentOrchestrator:
             self.state = OrchestratorState.CRITIQUE
             console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Performing self-critique...")
 
-            # Heuristic self-critique based on output (Phase 7 partitioning)
+            from memory_system.models.schemas import CritiqueRecord, EpisodeRecord
+
+            # Heuristic self-critique based on output (Phase 8 structured extraction)
             critique_reason = "Executed successfully without errors." if execution_result.success else "Execution failed during runtime or validation."
-            if not execution_result.success and execution_result.error and "timed out" in execution_result.error.lower():
+            is_timeout = not execution_result.success and execution_result.error and "timed out" in execution_result.error.lower()
+            if is_timeout:
                 critique_reason = "Execution failed due to environment timeout."
 
             what_worked = best_candidate.strategy if execution_result.success else None
             what_failed = best_candidate.strategy if not execution_result.success else None
             why_failed = execution_result.error if not execution_result.success else None
             never_repeat = best_candidate.strategy if not execution_result.success and execution_result.exit_code != 0 else None
+
+            critique_record = CritiqueRecord(
+                what_worked=what_worked,
+                what_failed=what_failed,
+                why_failed=why_failed,
+                retry_recommendation="Yes" if is_timeout else ("No" if never_repeat else "Maybe"),
+                confidence_explanation=f"Based on score {best_candidate.score}",
+                dangerous_paths=never_repeat,
+                promising_partial_paths=best_candidate.strategy if not execution_result.success and execution_result.exit_code == 0 else None,
+                execution_anomalies=execution_result.stderr if execution_result.stderr else None,
+                graph_blind_spots=None,
+                memory_blind_spots=None
+            )
+
+            crash_envelope = {
+                "stdout": execution_result.stdout,
+                "stderr": execution_result.stderr,
+                "exit_code": execution_result.exit_code,
+                "stack_trace": execution_result.stack_trace,
+                "failing_stage": execution_result.failing_stage
+            } if not execution_result.success else None
+
+            import time
+            episode = EpisodeRecord(
+                task=task_query,
+                workspace=workspace_dir,
+                selected_strategy=best_candidate.strategy,
+                graph_neighborhood_used=[d.model_dump() for d in (graph_context.impacted_dependencies or [])],
+                evidence_packet_summary=f"Found {len(past_memories)} memories",
+                memories_retrieved=[m.id for m in past_memories] if isinstance(past_memories, list) else [],
+                tools_used=[],
+                execution_profile=execution_result.profile_used or "unknown",
+                execution_outcome=outcome_status,
+                retries_attempted=iteration - 1,
+                crash_envelope=crash_envelope,
+                critique=critique_record,
+                confidence=best_candidate.score,
+                success=execution_result.success,
+                semantic_tags=[best_candidate.strategy, outcome_status],
+                relation_tags=[d.entity for d in graph_context.impacted_dependencies] if graph_context.impacted_dependencies else [],
+                affected_files=[],
+                timestamp=time.time()
+            )
 
             # 11. LEARN
             self.state = OrchestratorState.LEARN
@@ -208,7 +259,12 @@ class AgentOrchestrator:
                         what_failed=what_failed,
                         why_failed=why_failed,
                         never_repeat=never_repeat,
-                        timestamp=time.time()
+                        timestamp=episode.timestamp,
+                        episode_data=episode.model_dump(),
+                        critique_data=critique_record.model_dump(),
+                        workspace=workspace_dir,
+                        execution_profile=execution_result.profile_used,
+                        retries=iteration - 1
                     )
                 )
             except Exception as e:
