@@ -30,6 +30,12 @@ class AgentOrchestrator:
         self.decision_engine = DecisionEngine()
         self.max_iterations = max_iterations
 
+        # Phase 9: Release governance gate evaluation
+        from memory_system.services.governance_service import evaluate_release_readiness
+        gov = evaluate_release_readiness()
+        if gov.status == "FAIL":
+            console.print(f"[bold yellow]GOVERNANCE WARNING: Release readiness failed checks: {gov.reasons}[/bold yellow]")
+
     def _record_failure(self, task_query: str, reason: str, tags: List[str]):
         """Helper to ensure memory is written on EVERY stop, exception, and failure."""
         console.print(f"[bold red]Recording Failure Memory: {reason}[/bold red]")

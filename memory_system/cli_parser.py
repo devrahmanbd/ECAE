@@ -94,6 +94,25 @@ def parse_and_route_ecae_command(command_str: str) -> str:
         console.print(table)
         return "Dashboard generated successfully."
 
+
+    # Handle 'evaluate' subcommand
+    elif subcommand == "evaluate":
+        from memory_system.services.evaluation_service import run_learning_evaluation
+        from memory_system.services.governance_service import evaluate_release_readiness
+        from rich.console import Console
+        console = Console()
+
+        console.print("[bold cyan]Evaluating ECAE Engine Runtime Health...[/bold cyan]")
+        metrics = run_learning_evaluation()
+        gov = evaluate_release_readiness()
+
+        console.print(f"Metrics: {json.dumps(metrics, indent=2)}")
+        console.print(f"Governance Status: [bold {'green' if gov.status == 'PASS' else 'red'}]{gov.status}[/bold]")
+        if gov.reasons:
+            console.print(f"Flags: {gov.reasons}")
+
+        return "Evaluation logic executed."
+
     # Handle the full orchestrator task (e.g., /ecae . --task "Implement X")
     elif subcommand == ".":
         from memory_system.services.workspace_service import detect_workspace

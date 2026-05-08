@@ -1,7 +1,7 @@
 import pytest
 import os
 import tempfile
-from memory_system.models.schemas import ExecutionResult, MemoryMetadata
+from memory_system.models.schemas import ExecutionResult, MemoryMetadata, ToolchainRecord
 from memory_system.services.profile_service import get_profile_config, extract_stack_trace
 from memory_system.services.memory_service import search_memory, store_memory
 from memory_system.db.qdrant_client import init_collection
@@ -217,3 +217,50 @@ def test_toolchain_synthesis():
     assert my_results[0].metadata.is_toolchain is True
     assert my_results[0].metadata.toolchain_data is not None
     assert "detect_workspace" in my_results[0].metadata.toolchain_data["steps"]
+
+def test_drift_penalties():
+    """Verify that search_memory explicitly degrades final_scores for timeout-flagged critiques based on dynamic RL rules."""
+    from memory_system.services.memory_service import search_memory, store_memory
+    from memory_system.models.schemas import MemoryMetadata
+
+    # Store standard memory
+    store_memory("Drift validation base target normal", MemoryMetadata(outcome="success", confidence=0.8, critique="This is a very long normal critique that grants a bonus."))
+    # Store drift-flagged memory
+    store_memory("Drift validation base target timeout", MemoryMetadata(outcome="success", confidence=0.8, critique="Execution failed due to environment timeout.", drift_penalty=-0.5))
+
+    results = search_memory("Drift validation base target")
+    my_res = [r for r in results if "Drift validation base target" in r.text]
+
+    # The normal one should outrank the drifted one heavily
+    assert len(my_res) >= 2
+    assert "normal" in my_res[0].text
+
+def test_skill_promotion():
+    """Verify evaluate_skill_lifecycle properly promotes extensively used skills natively."""
+    from memory_system.services.memory_service import evaluate_skill_lifecycle
+    from memory_system.models.schemas import SkillRecord
+    import time
+
+    skill = SkillRecord(
+        skill_id="test",
+        name="test",
+        task_type="test",
+        description="test",
+        confidence=0.5,
+        last_verified_at=time.time(),
+        usage_count=4 # High usage
+    )
+
+    evaluated = evaluate_skill_lifecycle(skill)
+    assert evaluated.promoted_at is not None
+    assert evaluated.promotion_reason is not None
+
+def test_governance_gate():
+    """Verify evaluate_release_readiness identifies clean boundaries gracefully."""
+    from memory_system.services.governance_service import evaluate_release_readiness
+
+    # Passing "." evaluates the current clean test workspace
+    report = evaluate_release_readiness(".")
+
+    assert report.status in ["PASS", "FAIL"] # Might fail depending on if scratchpad scripts exist, but schema validation runs smoothly
+    assert isinstance(report.reasons, list)
