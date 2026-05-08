@@ -60,6 +60,40 @@ def parse_and_route_ecae_command(command_str: str) -> str:
         explanation = explain_graph_node(node)
         return json.dumps(explanation, indent=2)
 
+
+    # Handle 'dashboard' subcommand
+    elif subcommand == "dashboard":
+        task = "Benchmark test logic"
+        if len(parts) > 1:
+            task = " ".join(parts[1:])
+
+        from memory_system.tests.benchmarks.benchmark import compare_agents
+        from rich.console import Console
+        from rich.table import Table
+
+        console = Console()
+        console.print("[bold cyan]Running ECAE Benchmark Evaluation...[/bold cyan]")
+
+        result = compare_agents(task)
+
+        table = Table(title=f"ECAE Benchmark: {task}")
+        table.add_column("Metric", justify="right", style="cyan")
+        table.add_column("Baseline (Without ECAE)", justify="center", style="magenta")
+        table.add_column("ECAE Engine", justify="center", style="green")
+
+        b = result["baseline"]
+        e = result["ecae"]
+
+        table.add_row("Success", "PASS" if b["success"] else "FAIL", "PASS" if e["success"] else "FAIL")
+        table.add_row("Iterations", str(b["iterations"]), str(e["iterations"]))
+        table.add_row("Repeated Mistakes", str(b["repeated_mistakes"]), str(e["repeated_mistakes"]))
+        table.add_row("Memory Accesses", str(b.get("memory_accesses", 0)), str(e.get("memory_accesses", 0)))
+        table.add_row("Graph Nodes Checked", str(b.get("graph_nodes_checked", 0)), str(e.get("graph_nodes_checked", 0)))
+        table.add_row("Time Elapsed (s)", f"{b['time']:.2f}", f"{e['time']:.2f}")
+
+        console.print(table)
+        return "Dashboard generated successfully."
+
     # Handle the full orchestrator task (e.g., /ecae . --task "Implement X")
     elif subcommand == ".":
         from memory_system.services.workspace_service import detect_workspace

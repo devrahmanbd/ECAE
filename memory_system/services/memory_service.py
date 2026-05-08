@@ -5,7 +5,9 @@ from qdrant_client.http.models import PointStruct, Filter, FieldCondition, Match
 from memory_system.db.qdrant_client import client
 from memory_system.core.config import COLLECTION_NAME
 from memory_system.core.embeddings import embed
-from memory_system.models.schemas import MemoryItem, MemoryMetadata
+from memory_system.models.schemas import MemoryItem, MemoryMetadata, EvidencePacket, SkillRecord, CausalRecord, ToolchainRecord
+from memory_system.services.graph_service import get_graph_context
+import time
 
 def store_memory(text: str, metadata: Optional[MemoryMetadata] = None, similarity_threshold: float = 0.95) -> Optional[MemoryItem]:
     """Embed text and store in Qdrant, preventing duplicates."""
@@ -28,6 +30,9 @@ def store_memory(text: str, metadata: Optional[MemoryMetadata] = None, similarit
             return None
 
     # Use dict dump if provided, otherwise empty
+    if metadata and metadata.timestamp is None:
+        metadata.timestamp = time.time()
+
     meta_dict = metadata.model_dump(exclude_none=True) if metadata else {}
     payload = {
         "text": text,
@@ -97,17 +102,68 @@ def search_memory(
         meta = r.payload.get("metadata", {})
         base_score = getattr(r, "score", 0.0)
 
-        # Meta-Learning Reranking Signals
+        # Phase 8 Adaptive Hybrid Ranking Signals
         outcome_bonus = 0.0
-        # safely handle explicit None values alongside missing keys
+        recency_bonus = 0.0
+        critique_bonus = 0.0
+        context_bonus = 0.0
+        failure_penalty = 0.0
+
+        # Safely handle explicit None values
         raw_conf = meta.get("confidence")
         confidence_weight = raw_conf if raw_conf is not None else 0.5
 
-        if meta.get("outcome") == "success":
-            outcome_bonus += 0.2
+        outcome = meta.get("outcome")
+        retries = meta.get("retries", 0)
 
-        # Reranked score calculation
-        final_score = (base_score * 0.7) + (outcome_bonus * 0.2) + (confidence_weight * 0.1)
+        if outcome == "success":
+            outcome_bonus += 0.25
+        elif outcome == "failure":
+            outcome_bonus += 0.1
+
+            # Penalize recurrent failures and exhaustion
+            if retries and retries >= 3:
+                failure_penalty -= 0.15
+
+        # Critique Usefulness (if critique exists and is robust, give it a bump)
+        if meta.get("critique_data"):
+            critique_bonus += 0.15
+        elif meta.get("critique") and len(meta.get("critique")) > 10:
+            critique_bonus += 0.1
+
+        # Contextual Matching (if workspace or profiles match, prioritize relevance)
+        # Note: In a full scale search we would pass these as query params, but here we boost generally
+        # based on completeness of metadata fields.
+        if meta.get("execution_profile") or meta.get("workspace"):
+            context_bonus += 0.05
+
+        # Recency (newer memories get a small bump)
+        mem_time = meta.get("timestamp")
+        if mem_time:
+            age = time.time() - mem_time
+            if age < 86400: # Less than 1 day old
+                recency_bonus += 0.1
+
+        # Fast learning & Phase 8 Temporal Decay
+        drift_score = 0.0
+        decay_score = 0.0
+
+        if mem_time:
+            age_days = (time.time() - mem_time) / 86400
+
+            # Penalize completely stale entries (>30 days) heavily
+            if age_days > 30:
+                decay_score -= 0.3
+            # Low confidence memories decay faster
+            if confidence_weight < 0.4 and age_days > 7:
+                decay_score -= 0.2
+
+            # If critique indicates environment changed, score drift
+            if meta.get("critique") and "timeout" in meta.get("critique", "").lower():
+                drift_score -= 0.1
+
+        # Reranked score calculation mapping adaptive learning weights
+        final_score = (base_score * 0.4) + outcome_bonus + (confidence_weight * 0.1) + critique_bonus + recency_bonus + context_bonus + failure_penalty + decay_score + drift_score
 
         memories.append(MemoryItem(
             id=str(r.id),
@@ -142,3 +198,164 @@ def cleanup_memory(min_confidence: float = 0.5):
         logger.info("Memory cleanup successful")
     except Exception as e:
         logger.error(f"Memory cleanup failed: {str(e)}")
+
+
+def assemble_evidence(task: str, workspace_dir: str = ".") -> EvidencePacket:
+    """Phase 8: Assemble a rich evidence packet for the LLM deeply integrating operational traces."""
+    logger.info(f"Assembling evidence packet for task: {task}")
+
+    # 1. Gather Graph Neighborhood
+    graph_ctx = get_graph_context(task, root_dir=workspace_dir)
+    neighborhood = [d.model_dump() for d in (graph_ctx.impacted_dependencies or [])]
+
+    # 2. Gather Semantic Memories (Deeper Fetch)
+    all_memories = search_memory(task, limit=15)
+
+    successes = []
+    failures = []
+    critiques = []
+    traces = []
+
+    for mem in all_memories:
+        meta = mem.metadata
+        if not meta:
+            continue
+
+        # Parse Episode Record if available natively (Phase 8 priority)
+        if hasattr(meta, "episode_data") and meta.episode_data:
+            outcome = meta.episode_data.get("execution_outcome", meta.outcome)
+        else:
+            outcome = meta.outcome
+
+        if outcome == "success":
+            successes.append(mem)
+        elif outcome == "failure":
+            failures.append(mem)
+
+        if getattr(meta, "critique_data", None) or meta.critique:
+            critiques.append(mem)
+
+        if meta.execution_result_summary:
+            traces.append({
+                "id": mem.id,
+                "summary": meta.execution_result_summary,
+                "profile": getattr(meta, "execution_profile", "unknown")
+            })
+
+    from memory_system.models.schemas import CompressedEvidence
+
+    # Phase 8: Compress Evidence
+    known_good = []
+    known_fails = []
+    unsafe = []
+
+    for s in successes:
+        if s.metadata and s.metadata.what_worked and s.metadata.what_worked not in known_good:
+            known_good.append(s.metadata.what_worked)
+
+    for f in failures:
+        if f.metadata:
+            if f.metadata.what_failed and f.metadata.what_failed not in known_fails:
+                known_fails.append(f.metadata.what_failed)
+            if f.metadata.never_repeat and f.metadata.never_repeat not in unsafe:
+                unsafe.append(f.metadata.never_repeat)
+
+    compressed = CompressedEvidence(
+        known_good_patterns=known_good[:5],
+        known_failure_patterns=known_fails[:5],
+        high_confidence_paths=known_good[:2],
+        unsafe_paths=unsafe[:5],
+        unresolved_questions=[],
+        summary_confidence=0.8 if known_good else 0.4,
+        source_bundle_ids=[m.id for m in successes + failures]
+    )
+
+    return EvidencePacket(
+        task=task,
+        graph_neighborhood=neighborhood,
+        recent_successes=successes[:3], # Distilled context bounds
+        recent_failures=failures[:3],
+        critique_records=critiques[:3],
+        execution_traces=traces[:3]
+    )
+
+def extract_skills_and_causal(episode_data: Dict[str, Any], task: str) -> None:
+    """Phase 8: Extract reusable skills and causal records from successfully completed episodes."""
+    if not episode_data.get("success"):
+        # Extract Causal Failure Path
+        causal = CausalRecord(
+            action=episode_data.get("selected_strategy", "unknown"),
+            outcome="failure",
+            condition=episode_data.get("workspace", "unknown"),
+            likely_cause=episode_data.get("critique", {}).get("why_failed", "unknown"),
+            confidence=episode_data.get("confidence", 0.5),
+            first_seen=episode_data.get("timestamp", time.time()),
+            last_seen=episode_data.get("timestamp", time.time()),
+            source_episodes=[task]
+        )
+
+        # Store causal as semantic causal memory
+        store_memory(
+            text=f"CAUSAL FAILURE: {causal.action} resulted in {causal.outcome} because {causal.likely_cause}",
+            metadata=MemoryMetadata(
+                memory_type="causal",
+                is_causal=True,
+                causal_data=causal.model_dump(),
+                tags=["causal", "failure_pattern"],
+                timestamp=causal.last_seen
+            )
+        )
+    else:
+        # Extract Successful Skill
+        skill = SkillRecord(
+            skill_id=str(uuid.uuid4()),
+            name=f"Skill extracted from {task}",
+            task_type="resolved_task",
+            description=episode_data.get("selected_strategy", "unknown"),
+            confidence=episode_data.get("confidence", 0.5),
+            last_verified_at=episode_data.get("timestamp", time.time()),
+            usage_count=1,
+            source_episodes=[task]
+        )
+
+        # Store skill as semantic skill memory
+        store_memory(
+            text=f"SKILL SUCCESS: {skill.description} resolves {task}",
+            metadata=MemoryMetadata(
+                memory_type="semantic",
+                is_skill=True,
+                skill_data=skill.model_dump(),
+                tags=["skill", "success_pattern"],
+                timestamp=skill.last_verified_at,
+                created_at=time.time(),
+                last_used_at=time.time()
+            )
+        )
+
+        # Phase 8: Extract Autonomous Toolchain Synthesis
+        # Standard workflow sequence mapped into a reusable synthesis chain
+        toolchain = ToolchainRecord(
+            chain_id=str(uuid.uuid4()),
+            task_type="resolved_task_toolchain",
+            steps=["detect_workspace", "get_graph_context", "search_memory", "assemble_evidence", "execute_command"],
+            success_rate=1.0,
+            failure_patterns=[],
+            prerequisites=[task],
+            linked_skills=[skill.skill_id],
+            linked_episodes=[task],
+            verification_status="verified_success"
+        )
+
+        # Store toolchain as semantic toolchain memory
+        store_memory(
+            text=f"TOOLCHAIN SYNTHESIS: Standard loop mapped to resolve {task}",
+            metadata=MemoryMetadata(
+                memory_type="semantic",
+                is_toolchain=True,
+                toolchain_data=toolchain.model_dump(),
+                tags=["toolchain", "success_pattern"],
+                timestamp=time.time(),
+                created_at=time.time(),
+                last_used_at=time.time()
+            )
+        )

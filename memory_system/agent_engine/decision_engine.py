@@ -1,11 +1,11 @@
-from typing import List, Dict, Any, Optional
-from memory_system.models.schemas import CandidatePlan, GraphContext, MemoryItem
+from typing import List, Dict, Any, Optional, Union
+from memory_system.models.schemas import CandidatePlan, GraphContext, MemoryItem, EvidencePacket
 
 class DecisionEngine:
     def __init__(self, safety_rules: Optional[List[str]] = None):
         self.safety_rules = safety_rules or ["rm -rf", "mkfs", "dd ", "> /dev/sda"]
 
-    def generate_candidates(self, query: str, context: GraphContext, memories: List[MemoryItem]) -> List[CandidatePlan]:
+    def generate_candidates(self, query: str, context: GraphContext, evidence: Union[List[MemoryItem], EvidencePacket]) -> List[CandidatePlan]:
         """
         Mock generation of multiple candidate solutions.
         In a full system, this would call an LLM.
@@ -16,7 +16,7 @@ class DecisionEngine:
         # Candidate 1: standard fix
         candidates.append(CandidatePlan(
             id="cand_1",
-            strategy="Standard bug fix based on memory patterns.",
+            strategy=f"Standard bug fix based on memory patterns for {query} {id(self)}.",
             commands=[f"echo 'fixing {query}'"],
             score=0.7
         ))
@@ -41,7 +41,7 @@ class DecisionEngine:
 
         return candidates
 
-    def apply_constraints(self, candidate: CandidatePlan, context: GraphContext, memories: List[MemoryItem]) -> CandidatePlan:
+    def apply_constraints(self, candidate: CandidatePlan, context: GraphContext, evidence: Union[List[MemoryItem], EvidencePacket]) -> CandidatePlan:
         """
         Apply hard constraints and adjust scores.
         """
@@ -62,24 +62,39 @@ class DecisionEngine:
                 candidate.rejection_reason = "High graph risk without cautious strategy"
 
         # 3. Memory Insights Constraint
-        for mem in memories:
+        mem_list = evidence.recent_failures + evidence.recent_successes if isinstance(evidence, EvidencePacket) else evidence
+        for mem in mem_list:
             # If a past memory explicitly marks this strategy as a failure, penalize it
             if mem.metadata and mem.metadata.outcome == "failure":
                 if mem.metadata.decision and mem.metadata.decision in candidate.strategy:
                     candidate.score *= 0.1
                     candidate.rejection_reason = "Past memory indicates strategy failure"
 
+            # Phase 8 Adaptive Planning (Promote successful patterns natively)
+            if mem.metadata and mem.metadata.outcome == "success":
+                if mem.metadata.what_worked and mem.metadata.what_worked in candidate.strategy:
+                    candidate.score += 0.15 # Bump safe paths directly
+
+        # Apply strict suppression for unsafe compressed evidence paths
+        if isinstance(evidence, EvidencePacket):
+            for f_mem in evidence.recent_failures:
+                if f_mem.metadata and f_mem.metadata.never_repeat and f_mem.metadata.never_repeat in candidate.strategy:
+                    candidate.safe = False
+                    candidate.score = 0.0
+                    candidate.rejection_reason = "Matches strict known failure pattern"
+                    break
+
         return candidate
 
-    def evaluate_and_select(self, query: str, context: GraphContext, memories: List[MemoryItem]) -> Optional[CandidatePlan]:
+    def evaluate_and_select(self, query: str, context: GraphContext, evidence: Union[List[MemoryItem], EvidencePacket]) -> Optional[CandidatePlan]:
         """
         Main decision loop: generate -> score -> constrain -> select.
         """
-        raw_candidates = self.generate_candidates(query, context, memories)
+        raw_candidates = self.generate_candidates(query, context, evidence)
 
         evaluated = []
         for cand in raw_candidates:
-            evaluated.append(self.apply_constraints(cand, context, memories))
+            evaluated.append(self.apply_constraints(cand, context, evidence))
 
         # Filter safe
         safe_candidates = [c for c in evaluated if c.safe]
