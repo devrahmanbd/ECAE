@@ -87,3 +87,12 @@ async def test_mcp_dynamic_workspace_resolution(monkeypatch):
     expected_path = os.path.abspath("/fake/resolved/path")
     assert expected_path in passed_volumes
     assert passed_volumes[expected_path] == "/app"
+
+@pytest.mark.asyncio
+async def test_mcp_graceful_graph_failure_no_crash():
+    """Verify MCP gracefully returns not_found on invalid targets natively without throwing."""
+    result = await call_tool("get_graph_context", {"query": "some_invalid_target_that_does_not_exist"})
+    assert len(result) == 1
+    res_json = json.loads(result[0].text)
+    assert res_json["status"] == "not_found"
+    assert res_json["blast_radius"] == 0

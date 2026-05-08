@@ -6,6 +6,14 @@ def get_profile_config(workspace_dir: str) -> Dict[str, Any]:
     Returns the execution profile configuration based on the detected project type.
     """
 
+    if not os.path.exists(workspace_dir) or not os.path.isdir(workspace_dir):
+        return {
+            "name": "unknown",
+            "image": "ubuntu:22.04",
+            "build_cmd": "",
+            "validation_cmd": "echo 'Invalid or non-existent workspace'"
+        }
+
     # Python
     if os.path.exists(os.path.join(workspace_dir, "requirements.txt")) or \
        os.path.exists(os.path.join(workspace_dir, "pytest.ini")) or \
