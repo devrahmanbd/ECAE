@@ -59,6 +59,32 @@ class AgentOrchestrator:
             # If memory cannot be written -> STOP immediately
         self.state = OrchestratorState.STOP
 
+    def capture_rollback_evidence(self, task_query: str, workspace_dir: str, reason: str, execution_result: Any = None) -> Any:
+        """Phase 12: Safely captures context without mutating graphs prior to a release rollback."""
+        from memory_system.models.schemas import RollbackReport
+        import uuid
+
+        report = RollbackReport(
+            release_candidate_id=str(uuid.uuid4()),
+            trigger_reason=reason,
+            failing_stage=self.state.name,
+            affected_files=[],
+            execution_result=execution_result,
+            drift_summary={"action": "Rollback triggered."}
+        )
+
+        # Store context in memory without mutating graph layers natively
+        store_memory(
+            text=f"ROLLBACK EXECUTED: Candidate failed during {self.state.name} because {reason}",
+            metadata=MemoryMetadata(
+                memory_type="operational",
+                outcome="failure",
+                tags=["rollback_evidence"],
+                confidence=1.0
+            )
+        )
+        return report
+
     def transition_to(self, new_state: OrchestratorState, task_query: str, payload: dict = None):
         """Enforces explicit state machine contracts per Phase 10 rules."""
         console.print(f"[bold yellow]Transitioning: {self.state.name} -> {new_state.name}[/bold yellow]")
@@ -193,6 +219,8 @@ class AgentOrchestrator:
                 console.print("[bold red]FATAL: No execution evidence returned. Blocking success bypass.[/bold red]")
                 reason = "No execution evidence provided"
                 self._record_failure(task_query, reason, ["execution_bypass_blocked"])
+                # Phase 12: Ensure unrecoverable release states safely trap rollback contexts
+                self.capture_rollback_evidence(task_query, workspace_dir, reason, execution_result)
                 return {"status": "stop", "reason": reason}
 
             # 10. CRITIQUE

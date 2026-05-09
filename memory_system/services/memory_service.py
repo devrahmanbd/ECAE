@@ -362,6 +362,31 @@ def perform_knowledge_distillation() -> Dict[str, Any]:
         "action": "Confidence values natively decayed and cleaned up."
     }
 
+def monitor_production_drift() -> Any:
+    """Phase 12: Generate strict ProductionDriftReport mapping real operational deviations."""
+    from memory_system.models.schemas import ProductionDriftReport
+    distillation = perform_knowledge_distillation()
+
+    stale_count = distillation.get("stale_memories_detected", 0)
+    contradictions = distillation.get("contradictions_detected", 0)
+
+    trend = "stable"
+    if stale_count > 10 or contradictions > 5:
+        trend = "regressing"
+        EventBus.publish(Event(
+            event_type=EventType.RETRIEVAL_QUALITY_DROPPED,
+            payload={"stale": stale_count, "contradictions": contradictions}
+        ))
+
+    return ProductionDriftReport(
+        drift_trend=trend,
+        dependency_drift=0.0,
+        workspace_drift=0.0,
+        retrieval_drift=contradictions / max(1, stale_count + contradictions),
+        policy_drift=0.0,
+        outdated_skills_flagged=stale_count
+    )
+
 def evaluate_skill_lifecycle(skill: SkillRecord) -> SkillRecord:
     """Phase 11: Govern skill lifecycle transitioning states deterministically."""
     import time

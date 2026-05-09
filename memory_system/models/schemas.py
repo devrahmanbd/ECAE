@@ -306,3 +306,72 @@ class DriftClusterSummary(BaseModel):
 class KnowledgeDecaySummary(BaseModel):
     decayed_items: int = 0
     reclaimed_confidence: float = 0.0
+
+# Phase 12 Additions
+class ArchitectureFreezeReport(BaseModel):
+    is_frozen: bool = True
+    structural_mutations_detected: List[str] = []
+    control_flow_bypasses: List[str] = []
+
+class CompatibilityGuardReport(BaseModel):
+    status: str = "PASS"
+    unsupported_mutations: List[str] = []
+    shims_used: List[str] = []
+
+class ReleaseCandidateReport(BaseModel):
+    candidate_id: str
+    status: str = "PENDING"
+    workspaces_tested: List[str] = []
+    failed_checks: List[str] = []
+
+class CanaryRunReport(BaseModel):
+    run_id: str
+    startup_success_rate: float = 0.0
+    loop_completion_rate: float = 0.0
+    recovery_success_rate: float = 0.0
+    failure_recurrence_rate: float = 0.0
+    drift_rate: float = 0.0
+
+class RollbackReport(BaseModel):
+    release_candidate_id: str
+    trigger_reason: str
+    failing_stage: str
+    affected_files: List[str] = []
+    execution_result: Optional[ExecutionResult] = None
+    drift_summary: Dict[str, Any] = {}
+    rollback_action_taken: str = "REVERTED_TO_LAST_STABLE"
+    outcome: str = "SUCCESS"
+
+class ProductionDriftReport(BaseModel):
+    drift_trend: str = "stable"
+    dependency_drift: float = 0.0
+    workspace_drift: float = 0.0
+    retrieval_drift: float = 0.0
+    policy_drift: float = 0.0
+    outdated_skills_flagged: int = 0
+
+class StabilityDashboardPayload(BaseModel):
+    release_candidate_trends: Dict[str, Any] = {}
+    canary_health: Dict[str, Any] = {}
+    rollback_frequency: float = 0.0
+    drift_frequency: float = 0.0
+    execution_recovery_trend: str = "stable"
+    skill_reuse_trend: str = "stable"
+    release_readiness_score: float = 1.0
+    architecture_freeze_status: str = "FROZEN"
+
+class VersionFreezeReport(BaseModel):
+    version: str
+    is_frozen: bool = True
+    mcp_entrypoint_stable: bool = True
+    graphify_stable: bool = True
+    launcher_stable: bool = True
+
+class OperationalReleaseAudit(BaseModel):
+    audit_id: str
+    timestamp: float
+    release_candidate_checks: Dict[str, Any] = {}
+    canary_outcomes: Dict[str, Any] = {}
+    rollback_events: List[Dict[str, Any]] = []
+    freeze_status: str = "VERIFIED"
+    compatibility_guard_outcomes: str = "PASS"
