@@ -36,7 +36,7 @@ class EventBus:
     def publish(cls, event: Event):
         """Publish an event to all subscribers natively via asyncio tasks to ensure asynchronous execution."""
         from memory_system.core.logger import logger
-        logger.info(f"Published Event: {event.event_type.value} | Payload: {list(event.payload.keys())}")
+        logger.debug(f"Published Event: {event.event_type.value} | Payload: {list(event.payload.keys())}")
 
         handlers = cls._subscribers.get(event.event_type, [])
         for handler in handlers:

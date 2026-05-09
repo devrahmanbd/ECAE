@@ -74,7 +74,7 @@ def parse_and_route_ecae_command(command_str: str) -> str:
         from rich.console import Console
         from rich.table import Table
 
-        console = Console()
+        console = Console(file=sys.stderr)
         console.print("[bold cyan]Running ECAE Benchmark Evaluation...[/bold cyan]")
 
         result = compare_agents(task)
@@ -103,7 +103,7 @@ def parse_and_route_ecae_command(command_str: str) -> str:
         from memory_system.services.evaluation_service import run_learning_evaluation
         from memory_system.services.governance_service import evaluate_release_readiness
         from rich.console import Console
-        console = Console()
+        console = Console(file=sys.stderr)
 
         console.print("[bold cyan]Evaluating ECAE Engine Runtime Health...[/bold cyan]")
         metrics = run_learning_evaluation()

@@ -226,7 +226,7 @@ async def main():
     try:
         init_collection()
         init_project(workspace_dir)
-        logging.info(f"Initialized workspace at {workspace_dir}")
+        logging.debug(f"Initialized workspace at {workspace_dir}")
     except Exception as e:
         logging.error(f"Failed to initialize workspace: {e}")
 
