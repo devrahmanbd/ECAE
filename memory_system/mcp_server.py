@@ -12,6 +12,17 @@ import logging
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 
+try:
+    import tqdm
+    import tqdm.auto
+    orig_init = tqdm.tqdm.__init__
+    def custom_tqdm_init(self, *args, **kwargs):
+        kwargs['file'] = sys.stderr
+        orig_init(self, *args, **kwargs)
+    tqdm.tqdm.__init__ = custom_tqdm_init
+except ImportError:
+    pass
+
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 import mcp.types as types
