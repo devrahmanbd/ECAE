@@ -3,6 +3,7 @@ import subprocess
 import os
 from memory_system.models.schemas import ExecutionResult
 from memory_system.services.profile_service import get_profile_config, extract_stack_trace
+from memory_system.core.event_bus import EventBus, Event, EventType
 
 
 def execute_command(command: str, workdir: str = ".", timeout: int = 60) -> ExecutionResult:
@@ -108,20 +109,37 @@ def run_in_docker(image: str, build_command: str, test_command: str, volumes: di
     if not test_result.success:
         test_result.failing_stage = "test"
         test_result.stack_trace = extract_stack_trace(test_result.stderr)
+        EventBus.publish(Event(
+            event_type=EventType.EXECUTION_CRASHED,
+            payload={"profile": profile_name, "command": test_command, "error": test_result.stderr, "stage": "test"}
+        ))
         return test_result
 
-    # 3. Validation Gate
+    # 3. Execution Reality Verification
+    # Phase 10 rules explicitly demand evidence convergence over raw exit code success.
+    # A true pass requires logs parsing out "test passed" or similar success criteria.
     validation_cmd = config.get("validation_cmd") if profile_name != "unknown" else None
     if validation_cmd:
         valid_docker_cmd = f"docker run --rm {volume_args} -w /app {image} sh -c \"{validation_cmd}\""
         valid_result = execute_command_with_retry(valid_docker_cmd, timeout=timeout)
-        if not valid_result.success:
+
+        # Verify evidence convergence
+        evidence_converged = valid_result.success
+        if evidence_converged and "test" in valid_result.stdout.lower() and "fail" in valid_result.stdout.lower():
+            # False success detection: if pytest returned exit code 0 but reported failure internally somehow
+            evidence_converged = False
+
+        if not evidence_converged:
+            EventBus.publish(Event(
+                event_type=EventType.EXECUTION_CRASHED,
+                payload={"profile": profile_name, "command": validation_cmd, "error": valid_result.stderr, "stage": "validation"}
+            ))
             return ExecutionResult(
                 success=False,
                 stdout=test_result.stdout + "\nVALIDATION OUT:\n" + valid_result.stdout,
                 stderr=test_result.stderr + "\nVALIDATION ERR:\n" + valid_result.stderr,
                 exit_code=valid_result.exit_code,
-                error="Validation Gate failure",
+                error="Execution reality verification failed: tests did not definitively pass.",
                 profile_used=profile_name,
                 failing_stage="validation",
                 stack_trace=extract_stack_trace(valid_result.stderr)

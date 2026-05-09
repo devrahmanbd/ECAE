@@ -3,7 +3,7 @@ from typing import Optional, Dict, List, Any
 
 # Phase 2 & 3: Metadata Structure
 class MemoryMetadata(BaseModel):
-    memory_type: Optional[str] = None # episodic, semantic, causal
+    memory_type: Optional[str] = None # working, episodic, semantic, skill, causal, operational
     decision: Optional[str] = None
     reasoning: Optional[str] = None
     outcome: Optional[str] = None
@@ -41,6 +41,13 @@ class MemoryMetadata(BaseModel):
     is_skill: Optional[bool] = False
     is_causal: Optional[bool] = False
     is_toolchain: Optional[bool] = False
+    is_operational: Optional[bool] = False
+
+    # Phase 10: Strategic Planning
+    goals: Optional[List[str]] = None
+    subgoals: Optional[List[str]] = None
+    campaign_id: Optional[str] = None
+    milestones_completed: Optional[List[str]] = None
     skill_data: Optional[Dict[str, Any]] = None
     causal_data: Optional[Dict[str, Any]] = None
     toolchain_data: Optional[Dict[str, Any]] = None
@@ -188,7 +195,16 @@ class SkillRecord(BaseModel):
     last_verified_at: float
     usage_count: int = 0
 
-    # Phase 9 Skill Lifecycle
+    # Phase 11 Skill Lifecycle Governance
+    lifecycle_state: str = "candidate" # candidate, verified, promoted, degraded, retired, contradicted
+    promotion_count: int = 0
+    degradation_count: int = 0
+    contradiction_count: int = 0
+    last_success_at: Optional[float] = None
+    last_failure_at: Optional[float] = None
+    cross_workspace_success_rate: float = 0.0
+    governance_notes: List[str] = []
+
     promoted_at: Optional[float] = None
     retired_at: Optional[float] = None
     promotion_reason: Optional[str] = None
@@ -236,3 +252,126 @@ class ReleaseGateReport(BaseModel):
     drift_summary: Dict[str, Any] = {}
     skill_summary: Dict[str, Any] = {}
     stability_summary: Dict[str, Any] = {}
+
+    # Phase 11 Requirements
+    regression_summary: Dict[str, Any] = {}
+    benchmark_summary: Dict[str, Any] = {}
+    evaluation_summary: Dict[str, Any] = {}
+    recovery_summary: Dict[str, Any] = {}
+    policy_summary: Dict[str, Any] = {}
+    stability_score: float = 1.0
+
+
+class EvaluationReport(BaseModel):
+    retrieval_precision: float = 0.0
+    rerank_improvement: float = 0.0
+    skill_reuse_quality: float = 0.0
+    recovery_success_rate: float = 0.0
+    critique_usefulness: float = 0.0
+    retry_exhaustion_rate: float = 0.0
+    drift_frequency: float = 0.0
+    policy_success_rate: float = 0.0
+    benchmark_pass_rate: float = 0.0
+    plan_success_rate: float = 0.0
+    evidence_packet_quality: float = 0.0
+    failure_recurrence_rate: float = 0.0
+    execution_reliability: float = 0.0
+    time_to_recovery: float = 0.0
+    stale_memory_ratio: float = 0.0
+
+class HistoricalTrendSummary(BaseModel):
+    trend_direction: str = "stable"
+    confidence: float = 1.0
+    supporting_metrics: Dict[str, Any] = {}
+    regression_indicators: List[str] = []
+    anomaly_flags: List[str] = []
+
+class RegressionAlert(BaseModel):
+    metric_name: str
+    previous_value: float
+    current_value: float
+    severity: str
+    timestamp: float
+
+class DriftAuditReport(BaseModel):
+    total_stale_memories: int = 0
+    total_contradictions: int = 0
+    drift_score: float = 0.0
+
+class DriftClusterSummary(BaseModel):
+    cluster_id: str
+    affected_entities: List[str] = []
+    drift_reason: str
+
+class KnowledgeDecaySummary(BaseModel):
+    decayed_items: int = 0
+    reclaimed_confidence: float = 0.0
+
+# Phase 12 Additions
+class ArchitectureFreezeReport(BaseModel):
+    is_frozen: bool = True
+    structural_mutations_detected: List[str] = []
+    control_flow_bypasses: List[str] = []
+
+class CompatibilityGuardReport(BaseModel):
+    status: str = "PASS"
+    unsupported_mutations: List[str] = []
+    shims_used: List[str] = []
+
+class ReleaseCandidateReport(BaseModel):
+    candidate_id: str
+    status: str = "PENDING"
+    workspaces_tested: List[str] = []
+    failed_checks: List[str] = []
+
+class CanaryRunReport(BaseModel):
+    run_id: str
+    startup_success_rate: float = 0.0
+    loop_completion_rate: float = 0.0
+    recovery_success_rate: float = 0.0
+    failure_recurrence_rate: float = 0.0
+    drift_rate: float = 0.0
+
+class RollbackReport(BaseModel):
+    release_candidate_id: str
+    trigger_reason: str
+    failing_stage: str
+    affected_files: List[str] = []
+    execution_result: Optional[ExecutionResult] = None
+    drift_summary: Dict[str, Any] = {}
+    rollback_action_taken: str = "REVERTED_TO_LAST_STABLE"
+    outcome: str = "SUCCESS"
+
+class ProductionDriftReport(BaseModel):
+    drift_trend: str = "stable"
+    dependency_drift: float = 0.0
+    workspace_drift: float = 0.0
+    retrieval_drift: float = 0.0
+    policy_drift: float = 0.0
+    outdated_skills_flagged: int = 0
+
+class StabilityDashboardPayload(BaseModel):
+    release_candidate_trends: Dict[str, Any] = {}
+    canary_health: Dict[str, Any] = {}
+    rollback_frequency: float = 0.0
+    drift_frequency: float = 0.0
+    execution_recovery_trend: str = "stable"
+    skill_reuse_trend: str = "stable"
+    release_readiness_score: float = 1.0
+    architecture_freeze_status: str = "FROZEN"
+
+class VersionFreezeReport(BaseModel):
+    version: str
+    is_frozen: bool = True
+    mcp_entrypoint_stable: bool = True
+    graphify_stable: bool = True
+    launcher_stable: bool = True
+
+class OperationalReleaseAudit(BaseModel):
+    audit_id: str
+    timestamp: float
+    release_candidate_checks: Dict[str, Any] = {}
+    canary_outcomes: Dict[str, Any] = {}
+    rollback_events: List[Dict[str, Any]] = []
+    freeze_status: str = "VERIFIED"
+    compatibility_guard_outcomes: str = "PASS"
