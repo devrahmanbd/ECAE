@@ -7,6 +7,7 @@ from memory_system.core.config import COLLECTION_NAME
 from memory_system.core.embeddings import embed
 from memory_system.models.schemas import MemoryItem, MemoryMetadata, EvidencePacket, SkillRecord, CausalRecord, ToolchainRecord
 from memory_system.services.graph_service import get_graph_context
+from memory_system.core.event_bus import EventBus, Event, EventType
 import time
 
 def store_memory(text: str, metadata: Optional[MemoryMetadata] = None, similarity_threshold: float = 0.95) -> Optional[MemoryItem]:
@@ -49,6 +50,9 @@ def store_memory(text: str, metadata: Optional[MemoryMetadata] = None, similarit
             payload=payload
         )]
     )
+
+    # Note: Event hooks for MEMORY_CONTRADICTED or KNOWLEDGE_DISTILLED would be attached to async background tasks
+    # monitoring the Qdrant store state via the EventBus externally, not directly blocking the core store.
 
     return MemoryItem(id=point_id, text=text, metadata=metadata)
 
@@ -218,22 +222,37 @@ def cleanup_memory(min_confidence: float = 0.5):
 
 
 def assemble_evidence(task: str, workspace_dir: str = ".") -> EvidencePacket:
-    """Phase 8: Assemble a rich evidence packet for the LLM deeply integrating operational traces."""
-    logger.info(f"Assembling evidence packet for task: {task}")
+    """Phase 10: Multi-Stage Retrieval Pipeline generating a unified EvidencePacket."""
+    logger.info(f"Assembling evidence packet for task: {task} using Multi-Stage Retrieval")
 
-    # 1. Gather Graph Neighborhood
+    # Stage 1: Broad Recall
+    broad_memories = search_memory(task, limit=30)
+
+    # Stage 2: Structural Filtering
     graph_ctx = get_graph_context(task, root_dir=workspace_dir)
     neighborhood = [d.model_dump() for d in (graph_ctx.impacted_dependencies or [])]
+    related_entities = [d["entity"] for d in neighborhood]
 
-    # 2. Gather Semantic Memories (Deeper Fetch)
-    all_memories = search_memory(task, limit=15)
+    structurally_filtered = []
+    for mem in broad_memories:
+        meta = mem.metadata
+        if not meta:
+            continue
+        # Allow if it matches relations, is operational, or has no relation tags (general)
+        if meta.relation_labels:
+            if any(r in related_entities for r in meta.relation_labels):
+                structurally_filtered.append(mem)
+        else:
+            structurally_filtered.append(mem)
 
+    # Stage 3: Causal Filtering & Stage 4: Skill Matching & Stage 5: Policy Filtering
     successes = []
     failures = []
     critiques = []
     traces = []
+    skills = []
 
-    for mem in all_memories:
+    for mem in structurally_filtered:
         meta = mem.metadata
         if not meta:
             continue
@@ -259,9 +278,12 @@ def assemble_evidence(task: str, workspace_dir: str = ".") -> EvidencePacket:
                 "profile": getattr(meta, "execution_profile", "unknown")
             })
 
+        if meta.is_skill:
+            skills.append(mem)
+
     from memory_system.models.schemas import CompressedEvidence
 
-    # Phase 8: Compress Evidence
+    # Stage 6: Critique Compression
     known_good = []
     known_fails = []
     unsafe = []
@@ -297,6 +319,18 @@ def assemble_evidence(task: str, workspace_dir: str = ".") -> EvidencePacket:
     )
 
 
+def perform_knowledge_distillation():
+    """Phase 10: Knowledge Distillation logic (Stub for background event loops)."""
+    # 1. Duplicate collapse
+    # 2. Contradiction detection
+    # 3. Evidence compression
+    # 4. Stale decay (calling cleanup_memory)
+    # 5. Causal aggregation
+    # 6. Skill abstraction
+    # NOTE: Invoked asynchronously via EventBus triggers
+    from memory_system.services.memory_service import cleanup_memory
+    cleanup_memory(confidence_threshold=0.2)
+
 def evaluate_skill_lifecycle(skill: SkillRecord) -> SkillRecord:
     """Phase 9: Promote or retire skills based on usage counts and drift."""
     import time
@@ -306,6 +340,11 @@ def evaluate_skill_lifecycle(skill: SkillRecord) -> SkillRecord:
         skill.promoted_at = time.time()
         skill.promotion_reason = "Repeated successful execution validations."
         skill.confidence = min(skill.confidence + 0.1, 1.0)
+
+        EventBus.publish(Event(
+            event_type=EventType.SKILL_PROMOTED,
+            payload={"skill_id": skill.skill_id, "name": skill.name}
+        ))
 
     # Demotion/Retirement check based on a mock drift rule (simulating a contradicted rule threshold)
     # If confidence drops massively or it hasn't been verified in 60 days

@@ -3,7 +3,7 @@ from typing import Optional, Dict, List, Any
 
 # Phase 2 & 3: Metadata Structure
 class MemoryMetadata(BaseModel):
-    memory_type: Optional[str] = None # episodic, semantic, causal
+    memory_type: Optional[str] = None # working, episodic, semantic, skill, causal, operational
     decision: Optional[str] = None
     reasoning: Optional[str] = None
     outcome: Optional[str] = None
@@ -41,6 +41,13 @@ class MemoryMetadata(BaseModel):
     is_skill: Optional[bool] = False
     is_causal: Optional[bool] = False
     is_toolchain: Optional[bool] = False
+    is_operational: Optional[bool] = False
+
+    # Phase 10: Strategic Planning
+    goals: Optional[List[str]] = None
+    subgoals: Optional[List[str]] = None
+    campaign_id: Optional[str] = None
+    milestones_completed: Optional[List[str]] = None
     skill_data: Optional[Dict[str, Any]] = None
     causal_data: Optional[Dict[str, Any]] = None
     toolchain_data: Optional[Dict[str, Any]] = None

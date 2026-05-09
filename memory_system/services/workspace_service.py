@@ -1,6 +1,7 @@
 import os
 import json
 from typing import Dict, Any
+from memory_system.core.event_bus import EventBus, Event, EventType
 
 def detect_workspace(path: str = ".") -> str:
     """
@@ -15,10 +16,19 @@ def detect_workspace(path: str = ".") -> str:
     while current_path != os.path.dirname(current_path): # Stop at root
         for marker in markers:
             if os.path.exists(os.path.join(current_path, marker)):
+                EventBus.publish(Event(
+                    event_type=EventType.WORKSPACE_CHANGED,
+                    payload={"workspace": current_path, "marker": marker}
+                ))
                 return current_path
         current_path = os.path.dirname(current_path)
 
-    return os.path.abspath(path) # Fallback to the provided path if no markers found
+    fallback = os.path.abspath(path)
+    EventBus.publish(Event(
+        event_type=EventType.WORKSPACE_CHANGED,
+        payload={"workspace": fallback, "marker": "fallback"}
+    ))
+    return fallback # Fallback to the provided path if no markers found
 
 def get_execution_profile(path: str) -> str:
     """

@@ -4,6 +4,7 @@ import json
 from typing import Dict, Any, List, Set, Tuple
 from memory_system.models.schemas import GraphContext, GraphDependency
 from memory_system.core.logger import logger
+from memory_system.core.event_bus import EventBus, Event, EventType
 
 class ProjectGraph:
     def __init__(self, root_dir: str):
@@ -41,6 +42,11 @@ class ProjectGraph:
                     file_path = os.path.join(root, file)
                     rel_path = os.path.relpath(file_path, self.root_dir)
                     self._parse_file(file_path, rel_path)
+
+        EventBus.publish(Event(
+            event_type=EventType.GRAPH_INVALIDATED,
+            payload={"workspace": self.root_dir}
+        ))
 
     def _parse_file(self, file_path: str, rel_path: str):
         try:

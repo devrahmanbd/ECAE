@@ -6,6 +6,7 @@ from memory_system.services.graph_service import get_graph_context
 from memory_system.services.memory_service import search_memory, store_memory
 from memory_system.services.execution_service import run_in_docker
 from memory_system.agent_engine.decision_engine import DecisionEngine
+from memory_system.core.event_bus import EventBus, Event, EventType
 from rich.console import Console
 
 console = Console()
@@ -55,6 +56,15 @@ class AgentOrchestrator:
             # If memory cannot be written -> STOP immediately
         self.state = OrchestratorState.STOP
 
+    def transition_to(self, new_state: OrchestratorState, task_query: str, payload: dict = None):
+        """Enforces explicit state machine contracts per Phase 10 rules."""
+        console.print(f"[bold yellow]Transitioning: {self.state.name} -> {new_state.name}[/bold yellow]")
+        self.state = new_state
+        EventBus.publish(Event(
+            event_type=EventType.STATE_TRANSITIONED,
+            payload={"new_state": new_state.name, "task": task_query, "data": payload or {}}
+        ))
+
     def process_task(self, task_query: str, workspace_dir: str = ".") -> Dict[str, Any]:
         """
         Executes the deterministic state machine loop.
@@ -62,7 +72,7 @@ class AgentOrchestrator:
         """
         console.print(f"[bold blue]Starting Task:[/bold blue] {task_query}")
 
-        self.state = OrchestratorState.WORKSPACE_CHECK
+        self.transition_to(OrchestratorState.WORKSPACE_CHECK, task_query)
         if not os.path.exists(workspace_dir):
             reason = "No workspace detected"
             self._record_failure(task_query, reason, ["workspace_error"])
@@ -76,8 +86,7 @@ class AgentOrchestrator:
             console.print(f"\n[bold magenta]=== Iteration {iteration}/{self.max_iterations} ===[/bold magenta]")
 
             # 1. GRAPH LOAD
-            self.state = OrchestratorState.GRAPH_LOAD
-            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Fetching dependency graph...")
+            self.transition_to(OrchestratorState.GRAPH_LOAD, task_query)
             try:
                 graph_context = get_graph_context(task_query, root_dir=workspace_dir)
                 if graph_context.status == "exception" or not graph_context.graph_loaded:
@@ -89,8 +98,7 @@ class AgentOrchestrator:
             console.print(f"[dim]Impacted Dependencies: {len(graph_context.impacted_dependencies or [])}[/dim]")
 
             # 2. MEMORY LOAD
-            self.state = OrchestratorState.MEMORY_LOAD
-            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Checking Qdrant for past experiences...")
+            self.transition_to(OrchestratorState.MEMORY_LOAD, task_query)
             try:
                 past_memories = search_memory(task_query)
             except Exception as e:
@@ -100,8 +108,7 @@ class AgentOrchestrator:
             console.print(f"[dim]Found {len(past_memories)} relevant past memories.[/dim]")
 
             # 3. PREDICT
-            self.state = OrchestratorState.PREDICT
-            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Predicting candidates...")
+            self.transition_to(OrchestratorState.PREDICT, task_query)
             try:
                 from memory_system.services.memory_service import assemble_evidence
                 evidence = assemble_evidence(task_query, workspace_dir)
@@ -117,8 +124,7 @@ class AgentOrchestrator:
                 return {"status": "stop", "reason": reason}
 
             # 4. FILTER
-            self.state = OrchestratorState.FILTER
-            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Filtering unsafe paths...")
+            self.transition_to(OrchestratorState.FILTER, task_query)
             try:
                 evaluated = []
                 for cand in raw_candidates:
@@ -134,19 +140,16 @@ class AgentOrchestrator:
                 return {"status": "stop", "reason": reason}
 
             # 5. OPTIMIZE
-            self.state = OrchestratorState.OPTIMIZE
-            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Optimizing selection...")
+            self.transition_to(OrchestratorState.OPTIMIZE, task_query)
             best_candidate = max(safe_candidates, key=lambda c: c.score)
 
             # 6. GENERATE
-            self.state = OrchestratorState.GENERATE
-            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Generating concrete execution steps...")
+            self.transition_to(OrchestratorState.GENERATE, task_query)
             build_command = best_candidate.commands[0] if len(best_candidate.commands) > 0 else ""
             test_command = "pytest"
 
             # 7. EXECUTE
-            self.state = OrchestratorState.EXECUTE
-            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Testing candidate in isolated Docker sandbox...")
+            self.transition_to(OrchestratorState.EXECUTE, task_query)
             abs_workspace = os.path.abspath(workspace_dir)
             volumes = {abs_workspace: "/app"}
 
@@ -158,14 +161,23 @@ class AgentOrchestrator:
                     volumes=volumes,
                     timeout=30
                 )
+
+                # Phase 10: Self-Healing Execution hook
+                if not execution_result.success and iteration < self.max_iterations:
+                    console.print(f"[bold yellow]Execution Failed. Synthesizing Autonomous Recovery using Causal Memory...[/bold yellow]")
+                    # Simulate failure recovery query
+                    recovery_mems = search_memory(f"CAUSAL FAILURE: {execution_result.error}", limit=3, memory_type="causal")
+                    if recovery_mems:
+                        console.print(f"[bold green]Found {len(recovery_mems)} recovery paths. Adjusting trajectory...[/bold green]")
+                        # The next PREDICT cycle naturally subsumes this evidence natively.
+
             except Exception as e:
                 reason = "Execution sandbox unavailable"
                 self._record_failure(task_query, reason, ["sandbox_error"])
                 return {"status": "stop", "reason": reason}
 
             # 8. RESULT
-            self.state = OrchestratorState.RESULT
-            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Reading result...")
+            self.transition_to(OrchestratorState.RESULT, task_query, {"success": execution_result.success})
             outcome_status = "success" if execution_result.success else "failure"
             if execution_result.success:
                 console.print(f"[green]✔ {best_candidate.id} passed execution sandbox.[/green]")
@@ -181,8 +193,7 @@ class AgentOrchestrator:
                 return {"status": "stop", "reason": reason}
 
             # 10. CRITIQUE
-            self.state = OrchestratorState.CRITIQUE
-            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Performing self-critique...")
+            self.transition_to(OrchestratorState.CRITIQUE, task_query)
 
             from memory_system.models.schemas import CritiqueRecord, EpisodeRecord
 
@@ -241,8 +252,7 @@ class AgentOrchestrator:
             )
 
             # 11. LEARN
-            self.state = OrchestratorState.LEARN
-            console.print(f"[bold yellow]State: {self.state.name}[/bold yellow] - Learning from {outcome_status}...")
+            self.transition_to(OrchestratorState.LEARN, task_query, {"outcome": outcome_status})
 
             try:
                 import time

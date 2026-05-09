@@ -1,7 +1,7 @@
 from typing import Dict, Any, List
 
 class RuntimePolicy:
-    """Phase 8: Runtime internal policies influencing deterministic execution securely."""
+    """Phase 10: Runtime internal policies influencing deterministic execution securely."""
 
     def __init__(self):
         self.max_retries = 3
@@ -12,6 +12,8 @@ class RuntimePolicy:
             "> /dev/sda"
         ]
         self.timeout_cap = 120 # absolute max limits
+        self.allowed_file_scopes = ["/app", "/tmp"]
+        self.risk_level = "strict"
 
     def evaluate_command(self, command: str) -> bool:
         """Returns True if command is safe according to policies, else False."""
