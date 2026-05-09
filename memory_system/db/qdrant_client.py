@@ -22,8 +22,8 @@ def init_collection():
                 distance=Distance.COSINE
             )
         )
-    else:
-        print(f"Collection '{COLLECTION_NAME}' already exists.")
+    # else:
+    #     print(f"Collection '{COLLECTION_NAME}' already exists.")
 
 def get_client() -> QdrantClient:
     return client
