@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 import logging
+logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 
 from mcp.server import Server
@@ -20,6 +21,7 @@ from memory_system.services.graph_service import get_graph_context
 from memory_system.services.execution_service import run_in_docker
 from memory_system.models.schemas import MemoryMetadata
 from memory_system.services.workspace_service import detect_workspace, init_project
+from memory_system.db.qdrant_client import init_collection
 
 # The server wrapper representing the Agent
 server = Server("memory-system-agent")
@@ -211,6 +213,7 @@ async def main():
     # Detect workspace and ensure graph is initialized before serving
     workspace_dir = detect_workspace(".")
     try:
+        init_collection()
         init_project(workspace_dir)
         logging.info(f"Initialized workspace at {workspace_dir}")
     except Exception as e:

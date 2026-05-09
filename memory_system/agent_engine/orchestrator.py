@@ -8,8 +8,9 @@ from memory_system.services.execution_service import run_in_docker
 from memory_system.agent_engine.decision_engine import DecisionEngine
 from memory_system.core.event_bus import EventBus, Event, EventType
 from rich.console import Console
+import sys
 
-console = Console()
+console = Console(file=sys.stderr)
 
 class OrchestratorState(Enum):
     WORKSPACE_CHECK = 1

@@ -3,9 +3,12 @@ import sys
 import json
 import os
 from typing import Dict, Any
+from memory_system.db.qdrant_client import init_collection
 
 def parse_and_route_ecae_command(command_str: str) -> str:
     """Parses an /ecae command string and routes it to the corresponding logic."""
+    init_collection()
+
     if not command_str.startswith("/ecae"):
         return "Error: Command must start with /ecae"
 
