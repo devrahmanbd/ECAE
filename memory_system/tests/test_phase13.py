@@ -11,6 +11,36 @@ def setup_module(module):
     init_collection()
 
 @pytest.mark.asyncio
+async def test_background_worker_failure_path_memory_write(monkeypatch):
+    """Verify Phase 13 background worker explicitly writes memory bounding execution failures."""
+    from memory_system.services.memory_service import search_memory
+    import uuid
+    import time
+
+    unique_err = f"Mocked crash {uuid.uuid4()}"
+
+    # Mock distillation to throw a simulated critical runtime exception natively
+    def mock_distillation():
+        raise RuntimeError(unique_err)
+
+    monkeypatch.setattr("memory_system.core.background_worker.perform_knowledge_distillation", mock_distillation)
+
+    background_worker._is_running = True
+    task = asyncio.create_task(background_worker._maintenance_loop())
+
+    await asyncio.sleep(0.5) # allow it to crash and trigger exception handler securely
+
+    background_worker.stop()
+    await task
+
+    time.sleep(0.5) # Give Qdrant index time to refresh locally
+
+    # Verify the native store_memory path was hit during exception fallback safely
+    results = search_memory(unique_err, limit=5, memory_type="operational", tags=["background_error"])
+    assert len(results) >= 1
+    assert "Background Worker Loop Exception" in results[0].text
+
+@pytest.mark.asyncio
 async def test_background_worker_cycle():
     """Verify Phase 13 persistent daemon correctly cleans up memory and triggers benchmarks independently."""
     # Temporarily bypass true long-running bounds ensuring tests remain deterministic
@@ -28,6 +58,30 @@ async def test_background_worker_cycle():
     # Verify bounds processed
     assert background_worker.cycles_completed >= 1
     assert background_worker.drift_scans_run >= 1
+
+def test_scheduler_queue_restart_survival():
+    """Verify Phase 13 RuntimeQueue successfully deserializes tasks off the explicit JSON local trace after a hypothetical runtime reset."""
+    import os
+    from memory_system.core.scheduler import RuntimeQueue
+
+    # Clean possible trace state
+    if os.path.exists("/tmp/ecae_scheduler_queue.json"):
+        os.remove("/tmp/ecae_scheduler_queue.json")
+
+    initial_queue = RuntimeQueue()
+    initial_queue.submit_job("high priority survival", "/tmp", priority=5)
+    initial_queue.submit_job("deferred task survival", "/tmp", priority=10, deferred=True)
+
+    # Assert written to explicit persistence layer
+    assert os.path.exists("/tmp/ecae_scheduler_queue.json")
+
+    # Simulate a true service crash instantiating a completely isolated queue bounds reader
+    restarted_queue = RuntimeQueue()
+    assert len(restarted_queue.queue) == 1
+    assert len(restarted_queue.deferred) == 1
+
+    job = restarted_queue.pop_job()
+    assert job.task_query == "high priority survival"
 
 def test_scheduler_queue_depth():
     """Verify Phase 13 RuntimeQueue properly scales priority processing without mutating orchestrators."""
