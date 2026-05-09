@@ -195,7 +195,16 @@ class SkillRecord(BaseModel):
     last_verified_at: float
     usage_count: int = 0
 
-    # Phase 9 Skill Lifecycle
+    # Phase 11 Skill Lifecycle Governance
+    lifecycle_state: str = "candidate" # candidate, verified, promoted, degraded, retired, contradicted
+    promotion_count: int = 0
+    degradation_count: int = 0
+    contradiction_count: int = 0
+    last_success_at: Optional[float] = None
+    last_failure_at: Optional[float] = None
+    cross_workspace_success_rate: float = 0.0
+    governance_notes: List[str] = []
+
     promoted_at: Optional[float] = None
     retired_at: Optional[float] = None
     promotion_reason: Optional[str] = None
@@ -243,3 +252,57 @@ class ReleaseGateReport(BaseModel):
     drift_summary: Dict[str, Any] = {}
     skill_summary: Dict[str, Any] = {}
     stability_summary: Dict[str, Any] = {}
+
+    # Phase 11 Requirements
+    regression_summary: Dict[str, Any] = {}
+    benchmark_summary: Dict[str, Any] = {}
+    evaluation_summary: Dict[str, Any] = {}
+    recovery_summary: Dict[str, Any] = {}
+    policy_summary: Dict[str, Any] = {}
+    stability_score: float = 1.0
+
+
+class EvaluationReport(BaseModel):
+    retrieval_precision: float = 0.0
+    rerank_improvement: float = 0.0
+    skill_reuse_quality: float = 0.0
+    recovery_success_rate: float = 0.0
+    critique_usefulness: float = 0.0
+    retry_exhaustion_rate: float = 0.0
+    drift_frequency: float = 0.0
+    policy_success_rate: float = 0.0
+    benchmark_pass_rate: float = 0.0
+    plan_success_rate: float = 0.0
+    evidence_packet_quality: float = 0.0
+    failure_recurrence_rate: float = 0.0
+    execution_reliability: float = 0.0
+    time_to_recovery: float = 0.0
+    stale_memory_ratio: float = 0.0
+
+class HistoricalTrendSummary(BaseModel):
+    trend_direction: str = "stable"
+    confidence: float = 1.0
+    supporting_metrics: Dict[str, Any] = {}
+    regression_indicators: List[str] = []
+    anomaly_flags: List[str] = []
+
+class RegressionAlert(BaseModel):
+    metric_name: str
+    previous_value: float
+    current_value: float
+    severity: str
+    timestamp: float
+
+class DriftAuditReport(BaseModel):
+    total_stale_memories: int = 0
+    total_contradictions: int = 0
+    drift_score: float = 0.0
+
+class DriftClusterSummary(BaseModel):
+    cluster_id: str
+    affected_entities: List[str] = []
+    drift_reason: str
+
+class KnowledgeDecaySummary(BaseModel):
+    decayed_items: int = 0
+    reclaimed_confidence: float = 0.0

@@ -319,40 +319,87 @@ def assemble_evidence(task: str, workspace_dir: str = ".") -> EvidencePacket:
     )
 
 
-def perform_knowledge_distillation():
-    """Phase 10: Knowledge Distillation logic (Stub for background event loops)."""
-    # 1. Duplicate collapse
-    # 2. Contradiction detection
-    # 3. Evidence compression
-    # 4. Stale decay (calling cleanup_memory)
-    # 5. Causal aggregation
-    # 6. Skill abstraction
-    # NOTE: Invoked asynchronously via EventBus triggers
-    from memory_system.services.memory_service import cleanup_memory
-    cleanup_memory(confidence_threshold=0.2)
-
-def evaluate_skill_lifecycle(skill: SkillRecord) -> SkillRecord:
-    """Phase 9: Promote or retire skills based on usage counts and drift."""
+def perform_knowledge_distillation() -> Dict[str, Any]:
+    """Phase 11: Implement continuous drift auditing and stale knowledge cleanup."""
+    from memory_system.models.schemas import DriftAuditReport, KnowledgeDecaySummary
     import time
 
-    # Promotion check
-    if skill.usage_count >= 3 and not skill.promoted_at:
+    # Run active contradiction checking implicitly resolving duplicated bounds
+    all_memories = search_memory("Outcome for task", limit=100) # Broad sweep
+
+    stale_count = 0
+    contradiction_count = 0
+
+    # Very rudimentary drift and contradiction detection logic for illustration
+    known_outcomes = {}
+    for mem in all_memories:
+        meta = mem.metadata
+        if not meta or not meta.decision:
+            continue
+
+        decision = meta.decision
+        outcome = meta.outcome
+
+        # Check for contradiction (same decision, different outcome recently)
+        if decision in known_outcomes and known_outcomes[decision] != outcome:
+            contradiction_count += 1
+            meta.confidence = max(meta.confidence - 0.2, 0.0) # Downrank immediately
+
+        known_outcomes[decision] = outcome
+
+        # Check temporal drift (e.g. older than 30 days)
+        if meta.timestamp and (time.time() - meta.timestamp) > (86400 * 30):
+            stale_count += 1
+            meta.confidence = max(meta.confidence - 0.1, 0.0)
+
+    # 4. Stale decay triggering native deletion thresholds
+    from memory_system.services.memory_service import cleanup_memory
+    cleanup_memory(confidence_threshold=0.1)
+
+    return {
+        "stale_memories_detected": stale_count,
+        "contradictions_detected": contradiction_count,
+        "action": "Confidence values natively decayed and cleaned up."
+    }
+
+def evaluate_skill_lifecycle(skill: SkillRecord) -> SkillRecord:
+    """Phase 11: Govern skill lifecycle transitioning states deterministically."""
+    import time
+
+    if skill.lifecycle_state == "retired" or skill.lifecycle_state == "contradicted":
+        return skill # terminal states
+
+    # Validation & Promotion checks
+    if skill.usage_count >= 1 and skill.lifecycle_state == "candidate":
+        skill.lifecycle_state = "verified"
+        skill.governance_notes.append(f"Verified at {time.time()}")
+
+    if skill.usage_count >= 3 and skill.lifecycle_state == "verified":
+        skill.lifecycle_state = "promoted"
+        skill.promotion_count += 1
         skill.promoted_at = time.time()
         skill.promotion_reason = "Repeated successful execution validations."
-        skill.confidence = min(skill.confidence + 0.1, 1.0)
+        skill.confidence = min(skill.confidence + 0.2, 1.0)
 
         EventBus.publish(Event(
             event_type=EventType.SKILL_PROMOTED,
             payload={"skill_id": skill.skill_id, "name": skill.name}
         ))
 
-    # Demotion/Retirement check based on a mock drift rule (simulating a contradicted rule threshold)
-    # If confidence drops massively or it hasn't been verified in 60 days
+    # Contradiction & Degradation checking
+    if skill.contradiction_count > 1 and skill.lifecycle_state in ["verified", "promoted"]:
+        skill.lifecycle_state = "degraded"
+        skill.degradation_count += 1
+        skill.confidence = max(skill.confidence - 0.3, 0.1)
+        skill.governance_notes.append(f"Degraded due to multiple contradictions at {time.time()}")
+
+    # Demotion/Retirement drift check (60 days)
     if skill.last_verified_at and (time.time() - skill.last_verified_at) > (86400 * 60):
-        if not skill.retired_at:
-            skill.retired_at = time.time()
-            skill.retirement_reason = "Stale skill; unverified for over 60 days."
-            skill.confidence = max(skill.confidence - 0.5, 0.0)
+        skill.lifecycle_state = "retired"
+        skill.retired_at = time.time()
+        skill.retirement_reason = "Stale skill; unverified for over 60 days."
+        skill.confidence = max(skill.confidence - 0.5, 0.0)
+        skill.governance_notes.append(f"Retired due to drift at {time.time()}")
 
     return skill
 

@@ -34,6 +34,19 @@ def evaluate_release_readiness(workspace_dir: str = ".") -> ReleaseGateReport:
         failed_checks.append("Clean repository check")
         reasons.append(f"Found temporary artifacts: {', '.join(temp_scripts)}")
 
+    # 3. Phase 11: Trend Evaluation Verification
+    from memory_system.services.evaluation_service import analyze_learning_trends
+    try:
+        trends = analyze_learning_trends()
+        if trends.trend_direction == "regressing":
+            failed_checks.append("Evaluation Trend Check")
+            reasons.append(f"Learning metrics regressing. Confidence bounds: {trends.confidence}")
+    except Exception as e:
+        failed_checks.append("Evaluation Trend Check")
+        reasons.append(f"Failed to analyze learning trends: {e}")
+        from memory_system.models.schemas import HistoricalTrendSummary
+        trends = HistoricalTrendSummary()
+
     # Generate Output
     status = "FAIL" if failed_checks else "PASS"
 
@@ -44,5 +57,6 @@ def evaluate_release_readiness(workspace_dir: str = ".") -> ReleaseGateReport:
         metrics_summary={"total_skills": "Evaluated dynamically"},
         drift_summary={"global_drift": 0.0},
         skill_summary={"promoted": 0, "retired": 0},
-        stability_summary={"tests_passing": "Verified by pytest"}
+        stability_summary={"tests_passing": "Verified by pytest"},
+        regression_summary={"direction": trends.trend_direction, "indicators": trends.regression_indicators}
     )
