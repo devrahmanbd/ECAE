@@ -99,6 +99,10 @@ class AgentOrchestrator:
         Executes the deterministic state machine loop.
         Predict -> Filter -> Optimize -> Generate -> Execute -> Result -> Learn
         """
+        import time
+        from memory_system.services.telemetry_service import telemetry
+        start_time = time.time()
+
         console.print(f"[bold blue]Starting Task:[/bold blue] {task_query}")
 
         self.transition_to(OrchestratorState.WORKSPACE_CHECK, task_query)
@@ -139,7 +143,14 @@ class AgentOrchestrator:
             # 3. PREDICT
             self.transition_to(OrchestratorState.PREDICT, task_query)
             try:
+                from memory_system.agent_engine.kernel import runtime_kernel
                 from memory_system.services.memory_service import assemble_evidence
+
+                # Phase 13: Kernel Advisory Fetch natively supporting deterministic outputs
+                advisory = runtime_kernel.advise_orchestrator(task_query, "PREDICT")
+                if advisory:
+                    console.print(f"[dim]Kernel Advisory Received: {len(advisory)} agents consulted.[/dim]")
+
                 evidence = assemble_evidence(task_query, workspace_dir)
 
                 # Phase 8: Loop Enforcement Barrier - Block progression on missing evidence payload constraints natively
@@ -176,6 +187,14 @@ class AgentOrchestrator:
             self.transition_to(OrchestratorState.GENERATE, task_query)
             build_command = best_candidate.commands[0] if len(best_candidate.commands) > 0 else ""
             test_command = "pytest"
+
+            # Phase 13: Execute Sandboxed Forecast before risky execution natively
+            from memory_system.services.evaluation_service import forecast_execution_risk
+            forecast = forecast_execution_risk(best_candidate)
+            if forecast.failure_probability > 0.8:
+                reason = "Forecast indicates high probability of catastrophic failure or policy violation."
+                self._record_failure(task_query, reason, ["forecast_rejection"])
+                return {"status": "stop", "reason": reason}
 
             # 7. EXECUTE
             self.transition_to(OrchestratorState.EXECUTE, task_query)
@@ -326,6 +345,7 @@ class AgentOrchestrator:
 
             if execution_result.success:
                 console.print("[bold blue]Task Complete - Success[/bold blue]")
+                telemetry.record_orchestration_latency(time.time() - start_time)
                 return {
                     "status": "success",
                     "selected_candidate": best_candidate.model_dump(),
@@ -341,6 +361,8 @@ class AgentOrchestrator:
 
         # Write final failure due to timeout/iteration limit
         self._record_failure(task_query, "Max iterations reached without success.", ["iteration_limit"])
+
+        telemetry.record_orchestration_latency(time.time() - start_time)
 
         return {
             "status": "failure",
