@@ -375,3 +375,52 @@ class OperationalReleaseAudit(BaseModel):
     rollback_events: List[Dict[str, Any]] = []
     freeze_status: str = "VERIFIED"
     compatibility_guard_outcomes: str = "PASS"
+
+# Phase 13 Additions
+class BackgroundOperationReport(BaseModel):
+    cycles_completed: int = 0
+    drift_scans_run: int = 0
+    memories_cleaned: int = 0
+    benchmarks_executed: int = 0
+
+class SchedulingReport(BaseModel):
+    tasks_queued: int = 0
+    tasks_deferred: int = 0
+    priority_inversions_prevented: int = 0
+    queue_depth: int = 0
+
+class ResourceBudgetReport(BaseModel):
+    token_budget_remaining: float = 1.0
+    context_pressure: float = 0.0
+    memory_saturation: float = 0.0
+    adaptive_depth: str = "normal"
+
+class ModelRoutingReport(BaseModel):
+    selected_model: str = "default_planner"
+    routing_reason: str = "standard_complexity"
+    fallback_invoked: bool = False
+
+class ForecastReport(BaseModel):
+    plan_outcome_estimate: float = 0.0
+    failure_probability: float = 0.0
+    rollback_cost_estimate: str = "low"
+    drift_risk: str = "low"
+    policy_risk: str = "low"
+
+class MemoryFederationReport(BaseModel):
+    local_memory_size: int = 0
+    global_memory_size: int = 0
+    cold_memory_size: int = 0
+    cache_hits: int = 0
+
+class TelemetryReport(BaseModel):
+    orchestration_latency_avg: float = 0.0
+    retrieval_latency_avg: float = 0.0
+    recovery_latency_avg: float = 0.0
+    policy_hit_rate: float = 1.0
+    drift_acceleration: float = 0.0
+
+class CognitiveKernelReport(BaseModel):
+    coordination_health: str = "stable"
+    active_agents: List[str] = []
+    kernel_uptime: float = 0.0
