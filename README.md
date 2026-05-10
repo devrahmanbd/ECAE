@@ -119,14 +119,22 @@ $$\text{subject to: } \text{risk}(\Delta) < \tau$$
 
 ## 📡 Antigravity Integration (MCP)
 
-This project is a native **Model Context Protocol (MCP)** server. Add it to your Antigravity configuration to give your AI agent structural awareness:
+This project is a native **Model Context Protocol (MCP)** server. Add it to your Antigravity configuration to give your AI agent structural awareness.
+
+To ensure clean standard output (which MCP relies on for JSON-RPC communication) and to ensure rapid handshakes, configure it carefully:
 
 ```json
 {
   "mcpServers": {
-    "ecae-memory": {
+    "memory-system": {
       "command": "uv",
-      "args": ["run", "--with", "mcp", "memory_system/mcp_server.py"]
+      "args": [
+        "run",
+        "--with", "mcp",
+        "--with", "httpx",
+        "-m", "memory_system.mcp_server"
+      ],
+      "cwd": "/path/to/ecae/project"
     }
   }
 }
