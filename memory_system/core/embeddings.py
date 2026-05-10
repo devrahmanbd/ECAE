@@ -1,9 +1,7 @@
 import logging
-from sentence_transformers import SentenceTransformer
 from functools import lru_cache
 import os
 import sys
-from tqdm import tqdm
 
 # Load model once at module level locally pointing to cached offline weights
 logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
@@ -14,6 +12,7 @@ _model = None
 def _get_model():
     global _model
     if _model is None:
+        from sentence_transformers import SentenceTransformer
         _model = SentenceTransformer(local_model_path)
     return _model
 
