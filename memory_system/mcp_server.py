@@ -1,19 +1,13 @@
 import asyncio
 import sys
 import os
-import warnings
 
 # Ensure the root project directory is in the python path for absolute imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-warnings.filterwarnings("ignore")
-
 # Suppress HuggingFace hub warnings from polluting stdout (which breaks MCP stdio)
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
-
 import logging
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
@@ -172,9 +166,6 @@ async def get_prompt(name: str, arguments: dict | None = None) -> types.GetPromp
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     try:
-        # Lazy initialize runtime systems only when a tool is called
-        init_collection()
-
         if name == "ecae_cli":
             from memory_system.cli_parser import parse_and_route_ecae_command
             res_str = parse_and_route_ecae_command(arguments["command"])
@@ -230,6 +221,15 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         return [types.TextContent(type="text", text=f"Error executing tool: {str(e)}")]
 
 async def main():
+    # Detect workspace and ensure graph is initialized before serving
+    workspace_dir = detect_workspace(".")
+    try:
+        init_collection()
+        init_project(workspace_dir)
+        logging.info(f"Initialized workspace at {workspace_dir}")
+    except Exception as e:
+        logging.error(f"Failed to initialize workspace: {e}")
+
     async with stdio_server() as streams:
         await server.run(streams[0], streams[1], server.create_initialization_options())
 

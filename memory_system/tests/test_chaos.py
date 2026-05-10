@@ -29,16 +29,7 @@ def test_malformed_memory_read_stops(monkeypatch):
     import memory_system.services.memory_service as mem_svc
     def mock_query(*args, **kwargs):
         raise ValueError("Simulated Qdrant Connection Error")
-
-    # We now lazily get the client, so we must mock get_client() to return a mock client
-    class MockClient:
-        def query_points(self, *args, **kwargs):
-            raise ValueError("Simulated Qdrant Connection Error")
-
-        def upsert(self, *args, **kwargs):
-            pass
-
-    monkeypatch.setattr(mem_svc, "get_client", lambda: MockClient())
+    monkeypatch.setattr(mem_svc.client, "query_points", mock_query)
 
     orch = AgentOrchestrator()
     with tempfile.TemporaryDirectory() as tmpdir:

@@ -40,17 +40,16 @@ Use `/ecae` when the task needs one or more of these:
 ## Usage
 
 ```
-/ecae <path>                     # analyze a project directory and run the ECAE loop
-/ecae <path> --task "..."       # run a specific engineering task
-/ecae <path> --graph             # force graph-first inspection
-/ecae <path> --memory            # force memory retrieval before planning
-/ecae <path> --execute           # force sandbox execution before final answer
-/ecae <path> --deep              # deeper structural + semantic inspection
-/ecae <path> --update            # refresh results after file changes
-/ecae query "<question>"         # answer using graph + memory, with tool evidence
-/ecae path "<a>" "<b>"           # trace a relationship through the graph
-/ecae explain "<node>"            # explain a node and its connections
+/ecae init [path]                       # Initialize the workspace graph and memory profiles
+/ecae path <node_a> <node_b>            # Trace the graph dependency path between two nodes
+/ecae explain <node>                    # Explain the graph metrics for a specific node
+/ecae dashboard [task]                  # Run benchmarks comparing ECAE to baseline agents
+/ecae evaluate                          # Evaluate learning metrics and release readiness
+/ecae . --task "<task_description>"     # Run the ECAE orchestrator on the given task
+/ecae help                              # Show this help message
 ```
+
+*Note: Antigravity has access to the `/ecae` binary to execute workflows locally exactly the same way it executes `/graphify`. You can invoke the binary `./ecae` from the repository root.*
 
 If no path is given, use the current directory `.`.
 If the path is a GitHub URL, clone it first using standard git tooling, then continue on the local path.

@@ -2,7 +2,7 @@ from memory_system.core.logger import logger
 import uuid
 from typing import List, Optional, Dict, Any
 from qdrant_client.http.models import PointStruct, Filter, FieldCondition, MatchValue, MatchAny
-from memory_system.db.qdrant_client import get_client
+from memory_system.db.qdrant_client import client
 from memory_system.core.config import COLLECTION_NAME
 from memory_system.core.embeddings import embed
 from memory_system.models.schemas import MemoryItem, MemoryMetadata, EvidencePacket, SkillRecord, CausalRecord, ToolchainRecord
@@ -13,7 +13,6 @@ import time
 def store_memory(text: str, metadata: Optional[MemoryMetadata] = None, similarity_threshold: float = 0.95) -> Optional[MemoryItem]:
     """Embed text and store in Qdrant, preventing duplicates."""
     vector = embed(text)
-    client = get_client()
 
     # Deduplication check
     existing = client.query_points(
@@ -87,7 +86,6 @@ def search_memory(
     query_filter = Filter(must=must_conditions) if must_conditions else None
 
     logger.info(f"Searching memory with limit {limit}")
-    client = get_client()
     results = client.query_points(
         collection_name=COLLECTION_NAME,
         query=vector,
@@ -207,7 +205,6 @@ def cleanup_memory(min_confidence: float = 0.5):
     logger.info(f"Cleaning up memories with confidence < {min_confidence}")
     try:
         # In Qdrant, we use delete with a filter
-        client = get_client()
         client.delete(
             collection_name=COLLECTION_NAME,
             points_selector=Filter(
@@ -231,7 +228,6 @@ def route_memory_federation() -> Any:
     # We trace native limits evaluating active nodes vs stale/cold constraints deterministically
     # Replace simulated length aggregations with explicit Qdrant cluster point counts
     try:
-        client = get_client()
         total_points = client.count(collection_name=COLLECTION_NAME).count
     except Exception:
         total_points = 0
