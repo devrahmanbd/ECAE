@@ -6,8 +6,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Assuming the repository root is where this script is located
 REPO_ROOT="$SCRIPT_DIR"
 
+# Find python interpreter (prefer python3)
+if command -v python3 &> /dev/null; then
+    PYTHON_BIN="python3"
+elif command -v python &> /dev/null; then
+    PYTHON_BIN="python"
+else
+    echo "ECAE Error: python3 or python not found in PATH."
+    exit 1
+fi
+
 # Launch the CLI parser tool inside our environment
-PYTHONPATH="$REPO_ROOT" python -c "
+PYTHONPATH="$REPO_ROOT" "$PYTHON_BIN" -c "
 import sys
 from memory_system.cli_parser import parse_and_route_ecae_command
 

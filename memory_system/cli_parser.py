@@ -3,11 +3,11 @@ import sys
 import json
 import os
 from typing import Dict, Any
-from memory_system.db.qdrant_client import init_collection
 
 def parse_and_route_ecae_command(command_str: str) -> str:
     """Parses an /ecae command string and routes it to the corresponding logic."""
-    init_collection()
+    # We do NOT run init_collection() globally here, to avoid long startup lag.
+    # It is deferred to the commands that explicitly interact with memory or orchestration.
 
     if not command_str.startswith("/ecae"):
         return "Error: Command must start with /ecae"
@@ -28,6 +28,16 @@ def parse_and_route_ecae_command(command_str: str) -> str:
         parts = ["."]
 
     subcommand = parts[0]
+
+    if subcommand in ["help", "--help", "-h"]:
+        return """ECAE CLI Usage:
+  /ecae init [path]                       Initialize the workspace graph and memory profiles
+  /ecae path <node_a> <node_b>            Trace the graph dependency path between two nodes
+  /ecae explain <node>                    Explain the graph metrics for a specific node
+  /ecae dashboard [task]                  Run benchmarks comparing ECAE to baseline agents
+  /ecae evaluate                          Evaluate learning metrics and release readiness
+  /ecae . --task "<task_description>"     Run the ECAE orchestrator on the given task
+  /ecae help                              Show this help message"""
 
     # Handle 'init' subcommand
     if subcommand == "init":
@@ -103,14 +113,18 @@ def parse_and_route_ecae_command(command_str: str) -> str:
         from memory_system.services.evaluation_service import run_learning_evaluation
         from memory_system.services.governance_service import evaluate_release_readiness
         from rich.console import Console
+        from memory_system.db.qdrant_client import init_collection
+
+        init_collection()
         console = Console()
 
         console.print("[bold cyan]Evaluating ECAE Engine Runtime Health...[/bold cyan]")
         metrics = run_learning_evaluation()
         gov = evaluate_release_readiness()
 
-        console.print(f"Metrics: {json.dumps(metrics, indent=2)}")
-        console.print(f"Governance Status: [bold {'green' if gov.status == 'PASS' else 'red'}]{gov.status}[/bold]")
+        console.print(f"Metrics: {json.dumps(metrics.model_dump(), indent=2)}")
+        status_color = 'green' if gov.status == 'PASS' else 'red'
+        console.print(f"Governance Status: [{status_color} bold]{gov.status}[/{status_color} bold]")
         if gov.reasons:
             console.print(f"Flags: {gov.reasons}")
 
@@ -142,6 +156,9 @@ def process_task(task: str, workspace_dir: str = ".") -> str:
     import asyncio
     from memory_system.agent_engine.orchestrator import AgentOrchestrator
     import logging
+    from memory_system.db.qdrant_client import init_collection
+
+    init_collection()
 
     # We want to capture the output, or at least run it cleanly.
     # The simplest way is to run the loop and return the result.
