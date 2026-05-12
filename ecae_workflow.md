@@ -180,4 +180,4 @@ Workflow must stop if:
 - Learn from success and failure
 - Repeat until stop condition
 
-Do not answer from memory alone. Do not answer from graph alone. Do not answer from execution alone. Use the required tool for the required layer.
+Do not answer from memory alone. Do not answer from graph alone. Do not answer from execution alone. Use the required tool for the required layer. Graph layer handles structure. Memory layer handles context. Execution layer handles sandbox facts. Evaluation commands are read-only and operate strictly within evaluation scopes.

@@ -19,7 +19,20 @@ def run_learning_evaluation() -> EvaluationReport:
 
     total = len(episodes)
     if total == 0:
-        return EvaluationReport()
+        report = EvaluationReport()
+        # Persist the evaluation metric snapshot into memory for historical charting natively scoped correctly
+        store_memory(
+            text=f"ECAE Learning Evaluation: SR=0.00 ER=0.00",
+            metadata=MemoryMetadata(
+                memory_type="semantic",
+                outcome="failure",
+                tags=["evaluation_metrics"],
+                confidence=0.0,
+                timestamp=time.time()
+            ),
+            namespace="evaluation"
+        )
+        return report
 
     success_count = sum(1 for e in episodes if e.get("execution_outcome") == "success")
     exhaustion_count = sum(1 for e in episodes if e.get("execution_outcome") == "failure" and e.get("retries_attempted", 0) > 0)
@@ -45,7 +58,8 @@ def run_learning_evaluation() -> EvaluationReport:
             tags=["evaluation_metrics"],
             confidence=success_rate,
             timestamp=time.time()
-        )
+        ),
+        namespace="evaluation"
     )
 
     return report

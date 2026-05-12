@@ -63,7 +63,7 @@ async def test_mcp_dynamic_workspace_resolution(monkeypatch):
     def mock_detect(path="."):
         return "/fake/resolved/path"
 
-    monkeypatch.setattr("memory_system.mcp_server.detect_workspace", mock_detect)
+    monkeypatch.setattr(ws_svc, "detect_workspace", mock_detect)
 
     # Mock execute_command to see what volume it gets
     import memory_system.services.execution_service as exec_svc
@@ -77,7 +77,7 @@ async def test_mcp_dynamic_workspace_resolution(monkeypatch):
         from memory_system.models.schemas import ExecutionResult
         return ExecutionResult(success=True, stdout="mocked", stderr="", exit_code=0)
 
-    monkeypatch.setattr("memory_system.mcp_server.run_in_docker", mock_run_in_docker)
+    monkeypatch.setattr(exec_svc, "run_in_docker", mock_run_in_docker)
 
     # Run the tool
     result = await call_tool("execute_command", {

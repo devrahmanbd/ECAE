@@ -33,13 +33,6 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 import mcp.types as types
 
-from memory_system.services.memory_service import search_memory, store_memory
-from memory_system.services.graph_service import get_graph_context
-from memory_system.services.execution_service import run_in_docker
-from memory_system.models.schemas import MemoryMetadata
-from memory_system.services.workspace_service import detect_workspace, init_project
-from memory_system.db.qdrant_client import init_collection
-
 # The server wrapper representing the Agent
 server = Server("memory-system-agent")
 
@@ -172,6 +165,13 @@ async def get_prompt(name: str, arguments: dict | None = None) -> types.GetPromp
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     try:
+        from memory_system.db.qdrant_client import init_collection
+        from memory_system.services.memory_service import search_memory, store_memory
+        from memory_system.services.graph_service import get_graph_context
+        from memory_system.services.execution_service import run_in_docker
+        from memory_system.models.schemas import MemoryMetadata
+        from memory_system.services.workspace_service import detect_workspace
+
         # Lazy initialize runtime systems only when a tool is called
         init_collection()
 
@@ -196,6 +196,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             return [types.TextContent(type="text", text=resolved_root)]
 
         elif name == "retrieve_episodes":
+            import json
             # Native retrieval of exclusively parsed episode records utilizing our semantic filter
             results = search_memory(arguments["query"], limit=10)
             episodes = [r.metadata.episode_data for r in results if r.metadata and hasattr(r.metadata, "episode_data") and r.metadata.episode_data]
@@ -219,12 +220,13 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 image=arguments.get("image", "python:3.11-slim"),
                 build_command=arguments.get("build_command", ""),
                 test_command=arguments["test_command"],
-                volumes=volumes
+                volumes=volumes,
+                timeout=arguments.get("timeout", 60)
             )
             return [types.TextContent(type="text", text=res.model_dump_json())]
 
         else:
-            return [types.TextContent(type="text", text=f"Unknown tool: {name}")]
+            raise ValueError(f"Unknown tool: {name}")
 
     except Exception as e:
         return [types.TextContent(type="text", text=f"Error executing tool: {str(e)}")]

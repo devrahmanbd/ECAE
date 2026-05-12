@@ -44,18 +44,21 @@ More logs here"""
 
 def test_memory_reranking():
     # Insert multiple similar memories
-    store_memory("Database crash on startup index fix", MemoryMetadata(outcome="failure", confidence=0.5))
-    store_memory("Fixing database index performance bug", MemoryMetadata(outcome="success", confidence=0.9))
+    store_memory("Database crash on startup index fix", MemoryMetadata(outcome="failure", confidence=0.5), namespace="test")
+    store_memory("Fixing database index performance bug", MemoryMetadata(outcome="success", confidence=0.9), namespace="test")
 
     # Reranker should boost the success one higher despite identical vector text
-    results = search_memory("Database index error fix")
+    results = search_memory("Database index error fix", namespace="test")
+
+    # Filter to only the ones we just inserted
+    my_res = [r for r in results if "Database crash" in r.text or "Fixing database" in r.text]
 
     # We inserted failure first, but success should be ranked 1st
-    assert len(results) >= 2
+    assert len(my_res) >= 2
 
     # The outcome boost should push success up
-    assert results[0].metadata.outcome == "success"
-    assert results[1].metadata.outcome == "failure"
+    assert my_res[0].metadata.outcome == "success"
+    assert my_res[1].metadata.outcome == "failure"
 
 def test_episode_extraction_and_storage(monkeypatch):
     """Verify Phase 8 EpisodeRecord serialization natively writes into memory storage correctly."""
@@ -144,10 +147,10 @@ def test_temporal_decay():
     # Store memory from years ago
     past_time = time.time() - (86400 * 40) # 40 days ago
 
-    store_memory("Completely unique old decayed memory", MemoryMetadata(confidence=0.3, timestamp=past_time, outcome="failure"))
-    store_memory("Completely unique recent successful memory", MemoryMetadata(confidence=0.9, timestamp=time.time(), outcome="success"))
+    store_memory("Completely unique old decayed memory", MemoryMetadata(confidence=0.3, timestamp=past_time, outcome="failure"), namespace="test")
+    store_memory("Completely unique recent successful memory", MemoryMetadata(confidence=0.9, timestamp=time.time(), outcome="success"), namespace="test")
 
-    results = search_memory("Completely unique", limit=20)
+    results = search_memory("Completely unique", limit=20, namespace="test")
     my_res = [r for r in results if "Completely unique" in r.text]
     assert len(my_res) >= 2
 
@@ -224,11 +227,11 @@ def test_drift_penalties():
     from memory_system.models.schemas import MemoryMetadata
 
     # Store standard memory
-    store_memory("Drift validation base target normal", MemoryMetadata(outcome="success", confidence=0.8, critique="This is a very long normal critique that grants a bonus."))
+    store_memory("Drift validation base target normal", MemoryMetadata(outcome="success", confidence=0.8, critique="This is a very long normal critique that grants a bonus."), namespace="test")
     # Store drift-flagged memory
-    store_memory("Drift validation base target timeout", MemoryMetadata(outcome="success", confidence=0.8, critique="Execution failed due to environment timeout.", drift_penalty=-0.5))
+    store_memory("Drift validation base target timeout", MemoryMetadata(outcome="success", confidence=0.8, critique="Execution failed due to environment timeout.", drift_penalty=-0.5), namespace="test")
 
-    results = search_memory("Drift validation base target")
+    results = search_memory("Drift validation base target", namespace="test")
     my_res = [r for r in results if "Drift validation base target" in r.text]
 
     # The normal one should outrank the drifted one heavily
