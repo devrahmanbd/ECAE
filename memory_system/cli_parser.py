@@ -112,23 +112,20 @@ def parse_and_route_ecae_command(command_str: str) -> str:
     elif subcommand == "evaluate":
         from memory_system.services.evaluation_service import run_learning_evaluation
         from memory_system.services.governance_service import evaluate_release_readiness
-        from rich.console import Console
         from memory_system.db.qdrant_client import init_collection
 
         init_collection()
-        console = Console()
 
-        console.print("[bold cyan]Evaluating ECAE Engine Runtime Health...[/bold cyan]")
         metrics = run_learning_evaluation()
         gov = evaluate_release_readiness()
 
-        console.print(f"Metrics: {json.dumps(metrics.model_dump(), indent=2)}")
-        status_color = 'green' if gov.status == 'PASS' else 'red'
-        console.print(f"Governance Status: [{status_color} bold]{gov.status}[/{status_color} bold]")
-        if gov.reasons:
-            console.print(f"Flags: {gov.reasons}")
+        evaluation_output = {
+            "metrics": metrics.model_dump(),
+            "governance": gov.model_dump()
+        }
 
-        return "Evaluation logic executed."
+        # Return strictly standard JSON-RPC compatible serialized output cleanly
+        return json.dumps(evaluation_output, indent=2)
 
     # Handle the full orchestrator task (e.g., /ecae . --task "Implement X")
     elif subcommand == ".":

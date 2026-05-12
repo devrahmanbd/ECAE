@@ -23,6 +23,8 @@ class MemoryMetadata(BaseModel):
     # Phase 7 Positive/Negative Learning Fields
     what_worked: Optional[str] = None
     what_failed: Optional[str] = None
+
+    namespace: str = Field(default="production")
     why_failed: Optional[str] = None
     never_repeat: Optional[str] = None
     promising_paths: Optional[str] = None

@@ -99,3 +99,32 @@ def test_mcp_handshake():
 
 if __name__ == "__main__":
     test_mcp_handshake()
+
+def test_imports_are_lazy():
+    """Verify that importing memory_system.mcp_server does not load heavy dependencies."""
+    # We do this in a clean subprocess to check sys.modules using uv run to resolve dependencies
+    script = """
+import sys
+import json
+import memory_system.mcp_server
+
+modules = list(sys.modules.keys())
+result = {
+    'has_qdrant': any('qdrant' in m for m in modules),
+    'has_sentence_transformers': any('sentence_transformers' in m for m in modules)
+}
+print(json.dumps(result))
+"""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "."
+    out = subprocess.check_output(
+        [sys.executable, "-c", script],
+        env=env,
+        text=True
+    )
+    result = json.loads(out.strip())
+    assert not result['has_qdrant'], "qdrant_client was loaded eagerly!"
+    assert not result['has_sentence_transformers'], "sentence_transformers was loaded eagerly!"
+
+if __name__ == "__main__":
+    test_imports_are_lazy()

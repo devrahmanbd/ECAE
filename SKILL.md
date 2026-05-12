@@ -177,6 +177,7 @@ The rules engine decides whether a step is allowed.
 * Memory may suggest a path, but it cannot prove correctness.
 * Do not blend semantic memory with structural graph facts.
 * Log when memory influenced the decision.
+* Keep test and evaluation memory isolated using the `namespace` field. Test memory should never contaminate production search relevance.
 
 ### Execution rules
 
@@ -226,6 +227,7 @@ If a step failed, name the step and the reason.
 * Never pretend the skill is a CLI command.
 * Never mix memory evidence with graph evidence.
 * Never require manual graph.json edits.
+* Never perform runtime orchestration loop tests disguised as `/ecae evaluate`. Evaluation commands are read-only and operate strictly within evaluation scopes.
 
 ---
 

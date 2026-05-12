@@ -10,17 +10,32 @@ from memory_system.services.graph_service import get_graph_context
 from memory_system.core.event_bus import EventBus, Event, EventType
 import time
 
-def store_memory(text: str, metadata: Optional[MemoryMetadata] = None, similarity_threshold: float = 0.95) -> Optional[MemoryItem]:
+def store_memory(text: str, metadata: Optional[MemoryMetadata] = None, similarity_threshold: float = 0.95, namespace: str = "production") -> Optional[MemoryItem]:
     """Embed text and store in Qdrant, preventing duplicates."""
     vector = embed(text)
     client = get_client()
 
+    if metadata is None:
+        metadata = MemoryMetadata(namespace=namespace)
+    else:
+        metadata.namespace = namespace
+
     # Deduplication check
+    filter_cond = Filter(
+        must=[
+            FieldCondition(
+                key="metadata.namespace",
+                match=MatchValue(value=namespace)
+            )
+        ]
+    )
+
     existing = client.query_points(
         collection_name=COLLECTION_NAME,
         query=vector,
         limit=1,
-        with_payload=True
+        with_payload=True,
+        query_filter=filter_cond
     )
 
     points = getattr(existing, "points", existing)
@@ -61,12 +76,18 @@ def search_memory(
     query: str,
     limit: int = 5,
     memory_type: Optional[str] = None,
-    tags: Optional[List[str]] = None
+    tags: Optional[List[str]] = None,
+    namespace: str = "production"
 ) -> List[MemoryItem]:
     """Search for similar memories with ranking and metadata filtering."""
     vector = embed(query)
 
-    must_conditions = []
+    must_conditions = [
+        FieldCondition(
+            key="metadata.namespace",
+            match=MatchValue(value=namespace)
+        )
+    ]
 
     if memory_type:
         must_conditions.append(
